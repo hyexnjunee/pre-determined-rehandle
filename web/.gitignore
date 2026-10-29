@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+data/runs/*
+!data/runs/.gitkeep
+data/instances/*
+!data/instances/.gitkeep
+data/realcache/
+data/.access_token
+.DS_Store

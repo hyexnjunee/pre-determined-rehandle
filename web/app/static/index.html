@@ -1,0 +1,2356 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rehandle 협업 스케줄링 Web</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#fff; --line:#e3e6ea; --text:#1c2126; --muted:#6b7683;
+    --accent:#2f6df6; --accent-soft:#e8f0ff; --ok:#17914f; --warn:#b7791f; --err:#c0392b;
+    --c1:#2f6df6; --c2:#e2574c; --c3:#17914f; --c4:#8a5cf6;
+    --sc:#2f6df6; --lc:#e2574c;
+    --t-ds:#5b8def; --t-ld:#1f4fb8; --t-gi:#f08a7e; --t-go:#c43c30; --t-rh:#8a94a3; --t-assist:#8a5cf6;
+    --ink:#10233a;
+  }
+  .chiprow{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+  /* --- 실험 고르기 패널 --- */
+  .picker{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+  .picker-head{display:flex;align-items:center;gap:10px;padding:9px 12px;
+               background:#fafbfc;border-bottom:1px solid var(--line);font-size:13px}
+  .picker-head .right{margin-left:auto;display:flex;gap:6px;align-items:center}
+  .picker-body{max-height:290px;overflow-y:auto}
+  button.small-btn{padding:4px 9px;font-size:11.5px}
+  .pickrow{display:grid;grid-template-columns:20px minmax(120px,1.4fr) minmax(100px,1.2fr)
+           110px minmax(140px,1.6fr) 130px;
+           gap:10px;align-items:center;padding:7px 12px;font-size:12.5px;
+           border-bottom:1px solid #f2f4f6;cursor:pointer}
+  .pickrow:last-child{border-bottom:none}
+  .pickrow:hover{background:#f7f9fb}
+  .pickrow.on{background:var(--accent-soft)}
+  .pickrow input{width:auto;margin:0}
+  .pickrow>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pk-name{font-weight:600}
+  .pk-when{text-align:right;font-size:11px}
+  .pk-n{font-variant-numeric:tabular-nums;font-size:11.5px}
+  .mchip{display:inline-block;padding:1px 6px;margin-right:4px;border-radius:4px;
+         background:#eef1f5;color:var(--muted);font-size:10.5px;font-weight:600}
+  .mchip.opt{background:#e4f6ec;color:var(--ok)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans KR",sans-serif}
+  header{background:var(--panel);border-bottom:1px solid var(--line);padding:12px 20px;
+         display:flex;align-items:center;gap:18px;position:sticky;top:0;z-index:20}
+  header .sub{color:var(--muted);font-size:12px}
+  .brand{display:flex;align-items:center;gap:10px;cursor:pointer;text-decoration:none;
+         color:inherit;padding:2px 4px;border-radius:8px}
+  .brand:hover{background:#f1f4f8}
+  .brand-mark{background:var(--accent);color:#fff;font-weight:800;font-size:13px;
+              letter-spacing:.06em;padding:5px 9px;border-radius:7px}
+  .brand-title{font-size:19px;font-weight:700;letter-spacing:-.01em}
+  .brand-title b{color:var(--accent);font-weight:800}
+  @media (max-width:760px){ header .sub{display:none} .brand-title{font-size:16px} }
+  nav{margin-left:auto;display:flex;gap:6px}
+  nav button{background:none;border:1px solid transparent;padding:6px 14px;border-radius:7px;
+             cursor:pointer;font-size:13px;color:var(--muted)}
+  nav button.active{background:var(--accent-soft);color:var(--accent);border-color:#cfe0ff;font-weight:600}
+  main{padding:18px 28px 60px;max-width:2400px;margin:0 auto}
+  .layout{display:grid;grid-template-columns:minmax(520px,42%) minmax(0,1fr);gap:18px;align-items:start}
+  @media (max-width:1200px){.layout{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:14px}
+  .card > h2{font-size:13px;margin:0;padding:11px 14px;border-bottom:1px solid var(--line);
+             font-weight:650;display:flex;align-items:center;gap:8px}
+  .card > h2 .right{margin-left:auto;display:flex;gap:6px}
+  .card .body{padding:12px 14px}
+  label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px;font-weight:600;
+        letter-spacing:.02em;text-transform:uppercase}
+  input,select,textarea{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+        font:13px inherit;background:#fff;color:var(--text)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  button.btn{background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:7px;
+             cursor:pointer;font-size:13px;font-weight:600}
+  button.btn:hover{filter:brightness(1.06)}
+  button.btn[disabled]{opacity:.5;cursor:not-allowed}
+  button.ghost{background:#fff;color:var(--text);border:1px solid var(--line);padding:5px 10px;
+               border-radius:6px;cursor:pointer;font-size:12px}
+  button.ghost:hover{background:#f2f4f7}
+  button.danger{color:var(--err);border-color:#f2c9c4}
+  button.danger-btn{background:var(--err)}
+  button.danger-btn:hover{filter:brightness(1.06)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;
+     letter-spacing:.03em;padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600}
+  td{padding:5px 8px;border-bottom:1px solid #f0f2f4;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  td input,td select{padding:4px 6px;font-size:12.5px}
+  .num{font-variant-numeric:tabular-nums;text-align:right}
+  /* --- 논문(booktabs) 스타일 표: 세로선 없음, 가로 rule 3종 --- */
+  table.paper{font-size:12.5px;min-width:100%;width:auto;
+              font-variant-numeric:tabular-nums;background:#fff}
+  table.paper th, table.paper td{border-bottom:none;padding:5px 12px;white-space:nowrap}
+  table.paper thead tr:first-child th{border-top:1.6px solid var(--ink,#10233a);
+              text-transform:none;font-size:12px;color:var(--ink,#10233a);
+              text-align:center;padding-top:8px}
+  table.paper thead tr:first-child th.lead{border-top:1.6px solid var(--ink,#10233a)}
+  table.paper th.grp{border-bottom:.8px solid var(--line)}
+  table.paper thead tr:last-child th{border-bottom:.8px solid var(--ink,#10233a);
+              text-transform:none;font-size:11.5px;color:var(--muted);padding-bottom:6px}
+  table.paper tbody tr:hover{background:#f7f9fb}
+  table.paper tbody tr:last-child td{border-bottom:none}
+  table.paper td.lead{text-align:left;max-width:230px;overflow:hidden;
+              text-overflow:ellipsis;font-weight:500}
+  table.paper tfoot td{border-top:.8px solid var(--line);color:var(--muted)}
+  /* 마지막 줄(bottomrule): tfoot 이 있으면 tfoot 에, 없으면 tbody 마지막 행에 */
+  table.paper tbody tr:last-child td{border-bottom:1.6px solid var(--ink)}
+  table.paper tfoot tr:last-child td{border-bottom:1.6px solid var(--ink)}
+  table.paper:has(tfoot tr) tbody tr:last-child td{border-bottom:none}
+  table.paper b{color:var(--ink)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill.ok{background:#e4f6ec;color:var(--ok)}
+  .pill.warn{background:#fdf3e0;color:var(--warn)}
+  .figcmp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+  @media (max-width:1100px){.figcmp{grid-template-columns:minmax(0,1fr)}}
+  .figcmp.stack{grid-template-columns:minmax(0,1fr)}
+  .figcol{min-width:0;display:flex;flex-direction:column;gap:6px}
+  .figcol select{width:100%;font-weight:600}
+  .figcol .figwrap img{width:100%;height:auto}
+  .cand-wrap{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .cand-table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .cand-table th{position:sticky;top:0;background:#f6f8fb;text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .cand-table td{padding:5px 8px;border-bottom:1px solid #eef1f5;white-space:nowrap}
+  .cand-table td.num,.cand-table th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .cand-table tbody tr{cursor:pointer}
+  .cand-table tbody tr:hover{background:#f2f7ff}
+  .cand-table tbody tr.on{background:#e6f0ff}
+  .ctag{display:inline-block;min-width:24px;text-align:center;padding:0 6px;border-radius:10px;font-size:11px;font-weight:700}
+  .gstack.focus-pre .gbar:not(.pre){opacity:.22}
+  .gstack.focus-pre .gtri:not(.pre){opacity:.2}
+  .gstack.focus-pre .gov:not(.pre){opacity:.12}
+  .gstack .prebtn{margin-left:6px}
+  .gstack.focus-pre .prebtn{background:#e7f6ef;border-color:#0e9f6e;color:#0b7a55}
+  .ctag.bal{background:#e8f0ff;color:#1d4ed8} .ctag.ext{background:#fff1e6;color:#c2410c}
+  .set-plot{display:block;width:100%;max-width:420px;height:auto}
+  .set-plot circle{cursor:pointer}
+  .set-plot circle.on{stroke:#111;stroke-width:2}
+  .ctag.A1,.ctag.A2{background:#e4f6ec;color:var(--ok)} .ctag.B{background:#fdecec;color:#b42318} .ctag.C{background:#eef1f5;color:#4a5565}
+  .pill.err{background:#fbe9e7;color:var(--err)}
+  .pill.mute{background:#eef0f3;color:var(--muted)}
+  .msg{padding:8px 11px;border-radius:7px;font-size:12.5px;margin-bottom:8px}
+  .msg.err{background:#fbe9e7;color:#8e2a1e;border:1px solid #f2c9c4}
+  .msg.warn{background:#fdf3e0;color:#7a5410;border:1px solid #f0dfba}
+  .msg.info{background:var(--accent-soft);color:#1c4bb5;border:1px solid #cfe0ff}
+  .muted{color:var(--muted)}
+  .small{font-size:12px}
+  .method{border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:8px}
+  .method.on{border-color:var(--accent);background:#fbfcff}
+  .method .head{display:flex;align-items:center;gap:8px}
+  .method .head input{width:auto}
+  .method .name{font-weight:650;font-size:13px}
+  .method .opts{margin-top:8px;display:none}
+  .method.on .opts{display:block}
+  .row{display:flex;align-items:center;gap:8px}
+  .chk{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text);
+       text-transform:none;letter-spacing:0;font-weight:400;margin:0}
+  .chk input{width:auto}
+  pre.log{background:#12161c;color:#d5dde6;padding:12px;border-radius:8px;font-size:11.5px;
+          max-height:340px;overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);padding:0 14px}
+  .tabs button{background:none;border:none;border-bottom:2px solid transparent;padding:8px 10px;
+               cursor:pointer;font-size:12.5px;color:var(--muted)}
+  .tabs button.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+  .empty{padding:34px 14px;text-align:center;color:var(--muted);font-size:13px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:2px 0 8px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;
+            vertical-align:-1px}
+  svg text{font-family:inherit}
+  .best{color:var(--ok);font-weight:700}
+  .runitem{border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:9px;
+           cursor:pointer;background:#fff;transition:border-color .12s,box-shadow .12s}
+  .runitem:hover{border-color:var(--accent);box-shadow:0 1px 6px rgba(47,109,246,.09)}
+  .runitem .t{font-weight:650;font-size:13.5px}
+  .resultchip{display:inline-flex;align-items:center;gap:5px;background:#f5f7fa;
+              border:1px solid #e8ecf1;border-radius:7px;padding:3px 9px;font-size:12px}
+  .resultchip.best-chip{background:#e9f7ef;border-color:#bfe6cd}
+  .resultchip b{font-variant-numeric:tabular-nums}
+  .detailbar{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .detailtitle{font-size:18px;font-weight:700}
+  .flexwrap{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .spinner{width:13px;height:13px;border:2px solid #cfe0ff;border-top-color:var(--accent);
+           border-radius:50%;display:inline-block;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .hero{padding:6px 2px 16px}
+  .hero h2{margin:0 0 6px;font-size:22px;font-weight:680}
+  .hero p{margin:0;color:var(--muted);font-size:13.5px;max-width:760px}
+  .solvergrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+  .solvercard{border:1.5px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;
+              background:#fff;transition:border-color .12s,background .12s;position:relative}
+  .solvercard:hover{border-color:#b9cdf7}
+  .solvercard.on{border-color:var(--accent);background:#fbfcff}
+  .solvercard.off{opacity:.62;cursor:not-allowed;background:#fafbfc}
+  .solvercard .tick{width:18px;height:18px;border:1.5px solid var(--line);border-radius:5px;
+                    display:inline-flex;align-items:center;justify-content:center;
+                    font-size:12px;color:#fff;flex:none}
+  .solvercard.on .tick{background:var(--accent);border-color:var(--accent)}
+  .solvercard h3{margin:0;font-size:14.5px;font-weight:650}
+  .solvercard .paper{color:var(--muted);font-size:12px;margin-top:2px}
+  .solvercard .desc{font-size:12.5px;color:#404a55;margin-top:9px;line-height:1.55}
+  .solvercard .foot{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .tag{background:#eef1f5;color:#4b5662;border-radius:5px;padding:1px 7px;font-size:11px}
+  .figwrap{border:1px solid var(--line);border-radius:8px;overflow:auto;background:#fff}
+  .figwrap img{display:block;width:100%;height:auto}
+  /* 파라미터 라벨은 한글이므로 대문자 변환을 끄고, 아래에 설명을 붙인다 */
+  label.lbl{text-transform:none;letter-spacing:0;font-size:11.5px;color:#4b5662;
+            font-weight:600;margin-bottom:4px}
+  .hint{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.45}
+  .derived{margin-top:12px;background:#f7f9fc;border:1px solid #e6ecf5;border-radius:8px;
+           padding:10px 12px;font-size:12px;line-height:1.75;color:#3b4654}
+  .derived b{color:var(--text)}
+  .derived .k{display:inline-block;min-width:96px;color:var(--muted)}
+
+  /* ---------- 이 프로젝트 전용 ---------- */
+  .gensec{margin-bottom:12px}
+  .gentitle{font-size:12px;font-weight:700;color:#3b4654;margin-bottom:6px;padding-bottom:4px;border-bottom:1px dashed #dde5f0}
+  .gengrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px 10px;align-items:end}
+  .gengrid input{min-width:0;font-variant-numeric:tabular-nums}
+  label.pickrow{text-transform:none;letter-spacing:0;font-weight:400;color:var(--text);margin:0}
+  .seqcard > h2 .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+  table.seq td{padding:3px 4px}
+  table.seq th{padding:6px 4px}
+  table.seq input, table.seq select{padding:3px 5px;font-size:12.5px}
+  table.seq td.k{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right;width:22px}
+  table.seq tr.rh td{background:#fbfaff}
+  table.seq .mv{display:flex;gap:2px}
+  table.seq .mv button{padding:2px 6px;font-size:11px}
+  .typechip{display:inline-block;min-width:26px;text-align:center;border-radius:4px;
+            font-size:10.5px;font-weight:700;color:#fff;padding:1px 4px}
+  .t-DS{background:var(--t-ds)} .t-LD{background:var(--t-ld)}
+  .t-GI{background:var(--t-gi)} .t-GO{background:var(--t-go)}
+  .t-RH{background:var(--t-rh)} .t-AS{background:var(--t-assist)}
+  .impr{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;
+        padding:12px 14px;border-top:1px solid var(--line)}
+  .impr .box{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:#fbfcfe}
+  .impr-h{font-size:13px;font-weight:700;padding:12px 14px 0;display:flex;gap:8px;align-items:center}
+  .impr-h + .impr{border-top:0;padding-top:8px}
+  .impr.roll{border-top:1px dashed #e6defc}
+  .impr.roll .box{background:#faf8ff;border-color:#e6defc}
+  .impr.roll .k{color:#6d28d9}
+  .impr .warn{color:#b54708}
+  .impr .k{font-size:11px;color:var(--muted);font-weight:600}
+  .impr .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
+  .impr .sub{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .impr .good{color:var(--ok)} .impr .bad{color:var(--err)}
+  .seqline{font-size:12px;line-height:1.9}
+  .seqline .tk{display:inline-block;border-radius:4px;padding:0 5px;margin:1px 0;background:#f1f3f6}
+  .seqline .tk.rh{background:#eef0f3;color:#56606c}
+  .seqline .tk.as{background:#efe9ff;color:#5b34c9;font-weight:600}
+  .preview{border:1px solid var(--line);border-radius:8px;background:#fff;overflow-x:auto}
+  .nbpath{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#f3f5f8;
+          padding:2px 6px;border-radius:4px;word-break:break-all}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#f3f5f8;padding:1px 4px;border-radius:3px}
+  #ver-banner{display:none;position:sticky;top:0;z-index:50;padding:9px 16px;font-size:13px;
+              background:#fff4d6;border-bottom:1px solid #f0c75e;color:#5c4400;align-items:center;gap:10px}
+  #ver-banner.show{display:flex}
+  #ver-banner button{margin-left:auto}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" id="brand-home" title="홈으로">
+    <span class="brand-mark">POLAB</span>
+    <span class="brand-title">Rehandle 협업 스케줄링 <b>Web</b></span>
+  </a>
+  <span class="sub">비교군 vs 협업 모델 → 같은 인스턴스 → 결과 보관</span>
+  <nav>
+    <button data-tab="home" class="active">홈</button>
+    <button data-tab="run">실행</button>
+    <button data-tab="results">결과 보관함</button>
+    <button data-tab="table">논문 표</button>
+    <button data-tab="instances">인스턴스</button>
+  </nav>
+</header>
+<div id="ver-banner"><span id="ver-msg"></span><button class="btn" id="ver-reload">새로고침</button></div>
+
+<main>
+<!-- ==================== HOME ==================== -->
+<section id="tab-home">
+  <div class="hero">
+    <h2>반대편 크레인이 Rehandle을 도와주면 얼마나 좋아질까</h2>
+    <p>작업 순서가 정해진(predetermined) twin crane 블록에서, 반출·적하 전에 필요한 rehandle을
+       반대편 크레인이 대신 해주는 <b>협업 모델</b>과 지금처럼 원래 크레인이 다 하는 <b>비교군</b>을
+       같은 인스턴스로 돌려 비교합니다. 두 모델 모두 <code>model/</code> 폴더의 노트북을 그대로 실행합니다.</p>
+  </div>
+
+  <div class="card" id="server-status-card" style="display:none">
+    <h2>지금 서버 상태 <span class="right"><button class="ghost" id="btn-refresh-jobs">새로고침</button></span></h2>
+    <div class="body" id="server-status"></div>
+  </div>
+
+  <div class="card">
+    <h2>비교할 모델 <span class="muted" id="home-count"></span>
+      <span class="right">
+        <button class="ghost" id="home-all">전체 선택</button>
+        <button class="ghost" id="home-none">전체 해제</button>
+      </span>
+    </h2>
+    <div class="body"><div class="solvergrid" id="home-solvers"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>인스턴스</h2>
+    <div class="body">
+      <div class="grid2">
+        <div>
+          <label>시작할 인스턴스</label>
+          <select id="home-instance"></select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button class="btn" id="home-start" style="width:100%">선택한 모델로 실험 시작 →</button>
+        </div>
+      </div>
+      <div class="small muted" style="margin-top:8px" id="home-hint"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>노트북 연결</h2>
+    <div class="body small">
+      <div id="home-notebooks"></div>
+      <div class="msg info" style="margin-top:10px">
+        모델은 계속 노트북에서 고치면 됩니다. 웹은 실행할 때마다 노트북을 읽어서 아래 지점만 바꿔 넣습니다.
+        <ul style="margin:6px 0 0;padding-left:18px;line-height:1.8">
+          <li>데이터 셀: <code>N_BAY</code>, <code>Seq_SC = {…}</code>, <code>Seq_LC = {…}</code></li>
+          <li>파라미터 셀: <code>safety_margin</code> <code>t_hat</code> <code>pick</code> <code>drop</code>
+              <code>rh_inplace</code> <code>OBJ</code> (협업 모델은 <code>ALLOW_ASSIST</code> <code>HOME_RH_FIXED</code>)</li>
+          <li>솔브 셀: <code>model.Params.TimeLimit</code>, <code>model.optimize()</code></li>
+          <li>시각화 셀: <code>crane_colors = {</code> 가 있는 셀 (실패해도 해는 유지)</li>
+        </ul>
+        이 이름들만 그대로 두면 웹이 자동으로 따라갑니다.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== RUN ==================== -->
+<section id="tab-run" style="display:none">
+  <div class="layout">
+    <!-- LEFT -->
+    <div>
+      <div class="card">
+        <h2>인스턴스
+          <span class="right">
+            <button class="ghost" id="btn-gen">무작위 생성</button>
+            <button class="ghost" id="btn-preset">Toy 12작업</button>
+            <button class="ghost" id="btn-preset-small">소형 5작업</button>
+            <button class="ghost" id="btn-real">실데이터 가져오기</button>
+            <button class="ghost" id="btn-sets" title="롤링 호라이즌 실험용 5시간 인스턴스 세트 (균형 27 + 극단 16)">실험 세트 (5시간)</button>
+          </span>
+        </h2>
+        <div class="body" id="set-panel" style="display:none;border-bottom:1px solid var(--line);background:#fbfaff">
+          <div class="gensec"><div id="set-box"><span class="spinner"></span> 불러오는 중…</div></div>
+        </div>
+        <div class="body" id="gen-panel" style="display:none;border-bottom:1px solid var(--line);background:#fbfcff">
+          <div class="gensec">
+            <div class="gentitle" style="display:flex;align-items:center;gap:8px">작업 구성
+              <button class="ghost small-btn" id="btn-gen-preset" style="margin-left:auto"
+                title="원본 CSV 로 추정한 값(2시간 분량, 초 단위)으로 아래 칸과 시간 파라미터를 채웁니다">실데이터 보정값 채우기</button>
+              <button class="ghost small-btn" id="btn-gen-preset-ld"
+                title="적하 rehandle 을 많이 넣은 실험용 값 (실데이터는 LD rehandle 3.5 % 로 드묾). 모델 옵션 'AGV 도착 H분 전부터' 와 함께 쓰세요">적하 rehandle 실험값</button>
+              <button class="ghost small-btn" id="btn-gen-preset-rolling"
+                title="적하 rehandle 실험값에 작업 수만 2배 (약 2~3시간). '롤링 · …' 방법으로 AGV 정보 시간 H 를 바꿔 볼 때">롤링 실험값</button>
+              <button class="ghost small-btn" id="btn-gen-preset-queue"
+                title="실데이터 보정값과 같고, 트럭 도착 간격만 줄여 반출 트럭이 줄 서 있는 상황(실제 대기 중앙값 19분 수준)을 만듭니다">대기열 있는 보정값</button></div>
+            <div class="gengrid">
+              <div><label class="lbl">야드 bay 수</label><input id="gen-bays" type="number" value="30" min="3"></div>
+              <div><label class="lbl">DS (양하)</label><input id="gen-ds" type="number" value="3" min="0"></div>
+              <div><label class="lbl">LD (적하)</label><input id="gen-ld" type="number" value="2" min="0"></div>
+              <div><label class="lbl">GI (반입)</label><input id="gen-gi" type="number" value="2" min="0"></div>
+              <div><label class="lbl">GO (반출)</label><input id="gen-go" type="number" value="5" min="0"></div>
+            </div>
+          </div>
+          <div class="gensec">
+            <div class="gentitle">Rehandle</div>
+            <div class="gengrid">
+              <div><label class="lbl">GO 발생 확률</label><input id="gen-rhp-go" type="number" value="0.6" step="0.01" min="0" max="1"></div>
+              <div><label class="lbl">LD 발생 확률</label><input id="gen-rhp-ld" type="number" value="0.6" step="0.001" min="0" max="1" title="실데이터 보정값 0.035 (기록 구간 LD 의 3.48 %)"></div>
+              <div><label class="lbl">최대 개수</label><input id="gen-rhmax" type="number" value="3" min="0"></div>
+              <div><label class="lbl">개수 분포</label><select id="gen-rhdist">
+                <option value="uniform">균등 (1~최대)</option><option value="data">실데이터 분포</option></select></div>
+              <div><label class="lbl">다른 bay로 옮길 확률</label><input id="gen-mvp" type="number" value="0.3" step="0.05" min="0" max="1"></div>
+              <div><label class="lbl">옮기는 거리 상한 (bay)</label><input id="gen-span" type="number" value="6" min="1"></div>
+              <div><label class="lbl">GO bay 위치</label><select id="gen-gobay" title="반출 컨테이너가 놓인 bay 분포. 바다 쪽일수록 SC 가 돕기 쉽습니다">
+                <option value="uniform">균등</option><option value="sea">바다 쪽에 몰림</option><option value="land">육지 쪽에 몰림</option></select></div>
+            </div>
+          </div>
+          <div class="gensec">
+            <div class="gentitle">트럭 도착 간격 <span class="muted" style="font-weight:400">소수 가능 · 0 이면 모두 처음부터 도착</span></div>
+            <div class="gengrid">
+              <div><label class="lbl">SC 내부 트럭 (DS·LD)</label>
+                <input id="gen-scgap" type="number" value="10" min="0" step="any" placeholder="예: 0.5"></div>
+              <div><label class="lbl">LC 외부 트럭 (GI·GO)</label>
+                <input id="gen-lcgap" type="number" value="10" min="0" step="any" placeholder="예: 0.25"></div>
+              <div><label class="lbl">도착 방식</label><select id="gen-arrival" title="평균 간격은 위 값과 같고, 도착이 몰리는 정도만 다릅니다">
+                <option value="even">일정 간격</option><option value="poisson">무작위 (포아송)</option><option value="burst">몰려서 도착</option></select></div>
+              <div><label class="lbl">몰림 크기 (대)</label><input id="gen-burst" type="number" value="3" min="1" title="'몰려서 도착' 일 때 한 번에 오는 트럭 수"></div>
+            </div>
+          </div>
+          <div class="gensec">
+            <div class="gentitle">생성</div>
+            <div class="gengrid">
+              <div><label class="lbl">시드 (비우면 랜덤)</label><input id="gen-seed" type="number" placeholder="예: 42"></div>
+              <div><label class="lbl">생성 개수</label><input id="gen-count" type="number" value="1" min="1" max="50"></div>
+              <div><label class="lbl">이름 (선택)</label><input id="gen-name" placeholder="자동"></div>
+              <div style="display:flex;align-items:flex-end;gap:6px">
+                <button class="btn" id="btn-gen-run" style="flex:1">생성</button>
+                <button class="ghost" id="btn-gen-close">닫기</button>
+              </div>
+            </div>
+          </div>
+          <div class="hint" style="margin-top:8px">
+            LD·GO 마다 "RH 발생 확률" 로 rehandle 이 붙고 개수는 1~최대 개수. 각 rehandle 은
+            "다른 bay로 옮길 확률" 로 ±거리 상한 안의 다른 bay 에, 나머지는 같은 bay 안에 내려놓습니다.
+            트럭은 모든 작업에 있습니다 (DS·LD 내부 트럭, GI·GO 외부 트럭). 도착 시각은 크레인 순서를 따르고, 평균 간격은 위 값입니다
+            (일정 간격 / 간격이 지수분포인 무작위 / 몇 대씩 한꺼번에 도착).
+            참고 (동원 2025-01 데이터): GO 의 51.95%에 rehandle, 평균 2.32개, 같은 bay 28.5%, 이동 거리 중앙값 4 bay.
+            2개 이상 만들면 인스턴스 목록에 바로 저장됩니다.
+          </div>
+          <div id="gen-result" class="small" style="margin-top:8px"></div>
+        </div>
+        <div class="body" id="real-panel" style="display:none;border-bottom:1px solid var(--line);background:#fbfdf9">
+          <div class="gensec">
+            <div class="gentitle">실데이터 가져오기 <span class="muted" style="font-weight:400" id="real-src"></span></div>
+            <div id="real-status" class="small" style="margin-bottom:8px"></div>
+            <div id="real-cand" style="margin-bottom:12px"></div>
+            <div class="gengrid">
+              <div><label class="lbl">날짜</label><select id="real-date"></select></div>
+              <div style="grid-column:span 2"><label class="lbl">블록 (SC / LC 크레인)</label><select id="real-block"></select></div>
+            </div>
+            <div id="real-hours" style="margin-top:8px"></div>
+            <div class="gengrid" style="margin-top:6px">
+              <div><label class="lbl" title="그날 몇 시부터 잘라 올지. 위 막대를 눌러도 됩니다">구간 시작 시각</label><input id="real-start" type="time" value="09:00"></div>
+              <div><label class="lbl" title="시작 시각부터 몇 분 동안 시작된 작업을 가져올지">구간 길이 (분)</label><input id="real-min" type="number" value="60" min="10" step="10"></div>
+              <div><label class="lbl">안전 여유 (가정)</label><input id="real-safety" type="number" value="3" min="0" step="1"></div>
+              <div><label class="lbl" title="LD(적하)의 RH_CNT 는 2025-02-08 12:04 부터 기록됨. 기록이 빈 LD 는 직전 AH 로 추정">LD rehandle</label>
+                <select id="real-ldrh">
+                  <option value="auto" selected>자동 (기록 · 2/8 전은 추정)</option>
+                  <option value="record">기록만 (2/8 전 0)</option>
+                  <option value="none">넣지 않음 (0)</option></select></div>
+              <div style="display:flex;align-items:flex-end"><label class="chk"><input type="checkbox" id="real-init" checked> 기록상 시작 위치</label></div>
+              <div style="display:flex;align-items:flex-end"><label class="chk"><input type="checkbox" id="real-save"> 목록에 저장</label></div>
+              <div style="display:flex;align-items:flex-end;gap:6px">
+                <button class="btn" id="btn-real-run" style="flex:1">가져오기</button>
+                <button class="ghost" id="btn-real-close">닫기</button></div>
+            </div>
+            <div id="real-window" class="small" style="margin-top:8px;line-height:1.6"></div>
+          </div>
+          <div class="hint">
+            구간 안에서 시작한 DS·LD·GI·GO 를 크레인별 실제 순서대로 가져옵니다. rehandle 개수는 RH_CNT, 목적 bay 는 직전 AH 의 도착 bay 입니다.
+            LD(적하) 의 RH_CNT 는 <b>2025-02-08 12:04 부터</b> 기록돼 있어, 기록이 빈 LD 는 직전에 같은 블록·bay·row 에서 연달아 한 AH(간격 ≤ 10분)로 추정합니다
+            (기록과 개수 일치 99.3 %, 발생 정밀도 96.7 % · 재현율 87.0 %). 트럭 도착 a 는 REQ_DT (구간 시작 기준 초), 시간 파라미터는 초 단위 실데이터 값(t̂ 1.5 · pick 75 · drop 75 · ρ 150)입니다.
+            안전 여유는 현장 값이 정해지면 바꾸세요.
+          </div>
+          <div id="real-result" class="small" style="margin-top:8px"></div>
+        </div>
+        <div class="body">
+          <div class="grid2">
+            <div><label>이름</label><input id="inst-name"></div>
+            <div><label>ID</label><input id="inst-id"></div>
+          </div>
+          <div style="margin-top:8px"><label>메모</label><input id="inst-note"></div>
+
+          <div class="grid3" style="margin-top:12px">
+            <div>
+              <label class="lbl">야드 bay 수 (N)</label>
+              <input id="p-nbay" type="number" min="3">
+              <div class="hint" id="hint-nbay"></div>
+            </div>
+            <div>
+              <label class="lbl">t̂ — bay 1칸 이동시간</label>
+              <input id="p-t_hat" type="number" step="0.1">
+            </div>
+            <div>
+              <label class="lbl">안전 여유 (margin)</label>
+              <input id="p-safety" type="number" step="1">
+              <div class="hint" id="hint-safety"></div>
+            </div>
+          </div>
+          <div class="grid3" style="margin-top:10px">
+            <div>
+              <label class="lbl">집기 / 놓기 시간</label>
+              <div class="row">
+                <input id="p-pick" type="number" step="0.1"><span class="muted">/</span>
+                <input id="p-drop" type="number" step="0.1">
+              </div>
+            </div>
+            <div>
+              <label class="lbl">제자리 rehandle 1개 (ρ)</label>
+              <input id="p-rh" type="number" step="0.1">
+            </div>
+            <div>
+              <label class="lbl">기본 a (작업 가능 시각)</label>
+              <input id="p-ready" type="number" step="any" min="0">
+            </div>
+          </div>
+          <div class="grid3" style="margin-top:10px">
+            <div>
+              <label class="lbl">SC 시작 위치 (bay)</label>
+              <input id="p-scinit" type="number" step="any" min="0" placeholder="비우면 해측 TP 0">
+            </div>
+            <div>
+              <label class="lbl">LC 시작 위치 (bay)</label>
+              <input id="p-lcinit" type="number" step="any" min="0" placeholder="비우면 육측 TP">
+            </div>
+            <div class="hint" style="align-self:end" id="hint-init"></div>
+          </div>
+          <div class="derived" id="derived-info"></div>
+        </div>
+      </div>
+
+      <div class="card seqcard">
+        <h2><span class="dot" style="background:var(--sc)"></span> SC 작업 순서 <span class="muted small">해측 · DS / LD</span>
+          <span class="muted" id="sc-count"></span>
+          <span class="right">
+            <button class="ghost" data-add="sc:DS">+ DS</button>
+            <button class="ghost" data-add="sc:LD">+ LD</button>
+          </span>
+        </h2>
+        <div class="body" style="padding:0;max-height:360px;overflow:auto">
+          <table class="seq"><thead><tr><th>#</th><th>ID</th><th>유형</th><th>bay</th>
+            <th>r_c</th><th>rh_d (목적 bay)</th><th>a (트럭 도착)</th><th></th></tr></thead>
+          <tbody id="sc-rows"></tbody></table>
+        </div>
+      </div>
+
+      <div class="card seqcard">
+        <h2><span class="dot" style="background:var(--lc)"></span> LC 작업 순서 <span class="muted small">육측 · GI / GO</span>
+          <span class="muted" id="lc-count"></span>
+          <span class="right">
+            <button class="ghost" data-add="lc:GI">+ GI</button>
+            <button class="ghost" data-add="lc:GO">+ GO</button>
+          </span>
+        </h2>
+        <div class="body" style="padding:0;max-height:360px;overflow:auto">
+          <table class="seq"><thead><tr><th>#</th><th>ID</th><th>유형</th><th>bay</th>
+            <th>r_c</th><th>rh_d (목적 bay)</th><th>a (트럭 도착)</th><th></th></tr></thead>
+          <tbody id="lc-rows"></tbody></table>
+        </div>
+        <div class="body small muted" style="border-top:1px solid var(--line)">
+          위에서 아래 순서가 곧 predetermined sequence 입니다. ↑↓ 로 순서를 바꿉니다.
+          rh_d 는 rehandle 마다 내려놓을 bay 를 쉼표로 적습니다 (예: <code>16,16,19</code>). 비우면 모두 같은 bay 안에서 옮깁니다.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>작업 위치 미리보기 <span class="muted small">bay 축 위의 작업과 rehandle</span>
+          <span class="right"><button class="ghost" id="btn-json">JSON</button></span></h2>
+        <div class="body"><div class="preview" id="inst-preview"></div></div>
+      </div>
+
+      <div class="card" id="json-card" style="display:none">
+        <h2>인스턴스 JSON
+          <span class="right">
+            <button class="ghost" id="btn-json-apply">적용</button>
+            <button class="ghost" id="btn-json-download">다운로드</button>
+          </span>
+        </h2>
+        <div class="body"><textarea id="json-area" rows="14" spellcheck="false"></textarea></div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div>
+      <div class="card">
+        <h2>모델</h2>
+        <div class="body">
+          <div class="grid2" style="margin-bottom:10px">
+            <div>
+              <label class="lbl">목적함수 (두 모델 공통)</label>
+              <select id="run-objective">
+                <option value="truck_wait" selected>모든 트럭 대기 합 최소화 (DS·LD·GI·GO)</option>
+                <option value="makespan">makespan 최소화</option>
+                <option value="go_wait">GO 트럭 대기 합만 최소화</option>
+              </select>
+              <div class="hint">공정한 비교를 위해 실행마다 하나로 맞춰 두 모델에 같이 넣습니다.
+                트럭 대기 = 트럭 출발 − 도착 (DS·GI 는 집는 순간, LD·GO 는 내려놓는 순간 출발).</div>
+            </div>
+          </div>
+          <div id="method-list"></div>
+          <div id="validation"></div>
+          <div class="row" style="margin-top:10px;flex-wrap:wrap">
+            <button class="btn" id="btn-run">실행</button>
+            <button class="btn danger-btn" id="btn-cancel" style="display:none">취소</button>
+            <label class="chk"><input type="checkbox" id="save-result" checked> 결과 저장</label>
+            <label class="chk"><input type="checkbox" id="save-instance"> 인스턴스 저장</label>
+            <input id="run-owner" placeholder="실행자 (이름)" style="width:130px">
+            <input id="run-label" placeholder="실험 이름 (필수)" style="width:220px">
+            <span id="run-status" class="small muted"></span>
+          </div>
+          <div id="limit-info" class="small muted" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div class="card" id="compare-card" style="display:none">
+        <h2>비교 <span class="muted small" id="compare-obj"></span><span class="right">
+          <button class="ghost" id="btn-dl-schedule" style="display:none">스케줄 CSV</button>
+        </span></h2>
+        <div class="body" style="padding:0 0 6px;overflow-x:auto">
+          <table id="compare-table"></table>
+        </div>
+        <div id="impr-box"></div>
+      </div>
+
+      <div class="card" id="console-card" style="display:none">
+        <h2>실행 콘솔 <span class="muted small" id="console-hint"></span>
+          <span class="right">
+            <label class="chk"><input type="checkbox" id="console-follow" checked> 자동 스크롤</label>
+            <button class="ghost" id="btn-console-clear">지우기</button>
+          </span>
+        </h2>
+        <div class="body"><pre class="log" id="console-out" style="max-height:420px"></pre></div>
+      </div>
+
+      <div class="card" id="gantt-card" style="display:none">
+        <h2>스케줄 비교 (공통 Gantt) <span class="muted small">같은 시간 축으로 나란히</span></h2>
+        <div class="body" id="gantt-body"></div>
+      </div>
+
+      <div class="card" id="figure-card" style="display:none">
+        <h2>노트북 원본 차트 <span class="muted small">노트북 시각화 셀이 직접 그린 그림 · 휴리스틱도 같은 셀로 그림</span></h2>
+        <div class="tabs" id="figure-tabs"></div>
+        <div class="body" id="figure-body"></div>
+      </div>
+
+      <div class="card" id="detail-card" style="display:none">
+        <h2>상세 / 로그</h2>
+        <div class="tabs" id="detail-tabs"></div>
+        <div class="body" id="detail-body"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== RESULTS ==================== -->
+<section id="tab-results" style="display:none">
+  <div id="run-list-view">
+    <div class="card">
+      <h2>저장된 실행 결과 <span class="muted small" id="run-count"></span>
+        <span class="right">
+          <input id="run-search" placeholder="이름·실행자·인스턴스 검색" style="width:210px">
+          <button class="ghost" id="btn-refresh-runs">새로고침</button>
+          <button class="ghost" id="btn-dl-all">전체 CSV</button>
+        </span>
+      </h2>
+      <div class="body" id="run-list"></div>
+    </div>
+  </div>
+  <div id="run-detail-view" style="display:none"></div>
+</section>
+
+<!-- ==================== PAPER TABLE ==================== -->
+<section id="tab-table" style="display:none">
+  <div class="card">
+    <h2>논문용 비교표 <span class="right"><button class="ghost" id="btn-refresh-table">새로고침</button></span></h2>
+    <div class="body">
+      <p class="muted small" style="margin-top:0">
+        표에 넣을 실험을 골라 한 표로 모읍니다. makespan·트럭 대기는 행마다 가장 작은 값을 <b>굵게</b>,
+        최적으로 증명된 값에 * 를 붙입니다. 트럭 대기는 DS·LD·GI·GO 모든 트럭 기준입니다. 개선율은 같은 실행의 비교군 대비 감소율(%)입니다.
+      </p>
+      <div class="picker">
+        <div class="picker-head">
+          <b>표에 넣을 실험</b>
+          <span class="muted small" id="tbl-pick-count"></span>
+          <span class="right">
+            <input id="tbl-pick-search" placeholder="실험·인스턴스·실행자 검색" style="width:200px">
+            <button class="ghost small-btn" id="btn-pick-all">보이는 것 모두</button>
+            <button class="ghost small-btn" id="btn-pick-none">모두 해제</button>
+            <button class="ghost small-btn" id="btn-pick-recent">최근 10개</button>
+            <button class="ghost small-btn" id="btn-pick-latest">인스턴스별 최신</button>
+          </span>
+        </div>
+        <div class="picker-body" id="tbl-pick-list"></div>
+      </div>
+
+      <div class="grid2" style="gap:14px;margin:14px 0">
+        <div>
+          <label>표에 넣을 모델</label>
+          <div id="tbl-methods" class="chiprow"></div>
+        </div>
+        <div>
+          <label>표시할 지표</label>
+          <div class="chiprow">
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="makespan" checked> makespan</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="truck_wait" checked> 트럭 대기 합</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="tw_int"> 내부 트럭(DS·LD)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="tw_ext"> 외부 트럭(GI·GO)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="go_wait"> GO 대기 합</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="impr_ms"> makespan 개선(%)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="impr_tw" checked> 트럭 대기 개선(%)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="impr_gw"> GO 대기 개선(%)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="assist"> 지원 RH</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="dev"> MIP 대비(%)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="gap"> Gap(%)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="time" checked> 시간(s)</label>
+            <label class="chk"><input type="checkbox" class="tbl-metric" value="status"> 상태</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="chiprow" style="margin-bottom:14px">
+        <label class="chk">행 정렬
+          <select id="tbl-sort" style="width:auto">
+            <option value="n">작업 수 (n) 오름차순</option>
+            <option value="name">이름순</option>
+            <option value="time">저장한 순서</option>
+            <option value="pick">내가 고른 순서</option>
+          </select>
+        </label>
+        <label class="chk">행 이름
+          <select id="tbl-rowlabel" style="width:auto">
+            <option value="instance">인스턴스 이름</option>
+            <option value="run">실험 이름</option>
+            <option value="both">인스턴스 (실험)</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="tbl-summary" checked> 요약 행(평균) 포함</label>
+      </div>
+
+      <div style="overflow-x:auto"><table id="paper-table" class="paper"></table></div>
+
+      <div class="chiprow" style="margin-top:16px">
+        <button class="ghost" id="btn-tbl-csv">CSV 다운로드</button>
+        <button class="ghost" id="btn-tbl-tex">LaTeX 복사</button>
+        <button class="ghost" id="btn-tbl-md">Markdown 복사</button>
+        <span class="muted small" id="tbl-copy-msg"></span>
+      </div>
+      <details style="margin-top:12px">
+        <summary class="muted small">LaTeX 원본 보기 (booktabs)</summary>
+        <pre id="tbl-tex-out" class="log" style="max-height:320px"></pre>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== INSTANCES ==================== -->
+<section id="tab-instances" style="display:none">
+  <div id="inst-list-view">
+    <div class="card">
+      <h2>저장된 인스턴스 <span class="muted small" id="inst-count"></span>
+        <span class="right">
+          <input id="inst-search" placeholder="이름 검색" style="width:180px">
+          <button class="ghost" id="btn-refresh-inst">새로고침</button>
+        </span>
+      </h2>
+      <div class="body" id="instance-list"></div>
+    </div>
+  </div>
+  <div id="inst-detail-view" style="display:none"></div>
+</section>
+</main>
+
+<script>
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+const state = {config:null, instance:null, results:[], logs:{}, figures:{}, job:null,
+               detailTab:0, figureTab:0, selected:new Set(),
+               logOffset:0, runs:[], instances:[], objective:'truck_wait'};
+const TYPE_COLOR = {DS:'var(--t-ds)', LD:'var(--t-ld)', GI:'var(--t-gi)', GO:'var(--t-go)',
+                    RH:'var(--t-rh)', AS:'var(--t-assist)'};
+const CRANE_COLOR = {SC:'var(--sc)', LC:'var(--lc)'};
+const ROLE_LABEL = {baseline:'비교군', proposed:'제안', heuristic:'휴리스틱'};
+const OBJ_LABEL = {makespan:'makespan 최소화', truck_wait:'모든 트럭 대기 합 최소화', go_wait:'GO 트럭 대기 합 최소화'};
+
+// ---------------------------------------------------------------- helpers
+const api = async (url, opts={}) => {
+  const r = await fetch(url, opts);
+  const ct = r.headers.get('content-type')||'';
+  if (ct.includes('json')) return r.json();
+  return r.text();
+};
+const post = (url, body) => api(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                                      body:JSON.stringify(body)});
+const fmt = (v, d=2) => (v===null||v===undefined||v==='') ? '–'
+        : (typeof v === 'number' ? (Number.isInteger(v)?String(v):v.toFixed(d)) : v);
+const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const stamp = t => new Date(t*1000).toLocaleString('ko-KR');
+const deep = o => JSON.parse(JSON.stringify(o));
+const pct = (base, v) => (typeof base==='number' && typeof v==='number' && base>0)
+        ? (base - v) / base * 100 : null;
+
+function statusPill(s){
+  const up = String(s||'').toUpperCase();
+  let cls = 'mute';
+  if (up.includes('OPTIMAL')) cls='ok';
+  else if (up.includes('FEASIBLE')||up.includes('TIME')||up.includes('HEURISTIC')||up.includes('ROLLING')) cls='warn';
+  else if (up.includes('ERROR')||up.includes('INFEASIBLE')||up.includes('SKIP')||up.includes('CANCEL')) cls='err';
+  return `<span class="pill ${cls}">${esc(s||'–')}</span>`;
+}
+const typeChip = t => `<span class="typechip t-${esc(t)}">${esc(t)}</span>`;
+
+// ---------------------------------------------------------------- tabs
+const TABS = ['home','run','results','table','instances'];
+function goTab(name){
+  $$('nav button').forEach(x => x.classList.toggle('active', x.dataset.tab===name));
+  TABS.forEach(t => $('#tab-'+t).style.display = (t===name ? '' : 'none'));
+  if (name==='results') loadRuns();
+  if (name==='instances') loadInstances();
+  if (name==='home') { renderHome(); renderServerStatus(); renderHomeInstances(); }
+  if (name==='run') syncMethodChecks();
+  if (name==='table') loadTable();
+  window.scrollTo(0,0);
+}
+$$('nav button').forEach(b => b.onclick = () => goTab(b.dataset.tab));
+$('#brand-home').onclick = () => goTab('home');
+
+// ---------------------------------------------------------------- instance editor
+function readInstance(){
+  const i = state.instance;
+  i.name = $('#inst-name').value; i.id = $('#inst-id').value; i.note = $('#inst-note').value;
+  i.block.n_bay = +$('#p-nbay').value;
+  i.block.sc_init = $('#p-scinit').value==='' ? null : +$('#p-scinit').value;
+  i.block.lc_init = $('#p-lcinit').value==='' ? null : +$('#p-lcinit').value;
+  const p = i.params;
+  p.t_hat = +$('#p-t_hat').value; p.safety_margin = +$('#p-safety').value;
+  p.pick = +$('#p-pick').value; p.drop = +$('#p-drop').value;
+  p.rh_inplace = +$('#p-rh').value; p.default_ready = +$('#p-ready').value;
+  return i;
+}
+
+function rhText(j){ return (j.rh_d && j.rh_d.length) ? j.rh_d.join(',') : ''; }
+
+function seqRows(side){
+  const seq = state.instance['seq_'+side];
+  const types = side==='sc' ? ['DS','LD'] : ['GI','GO'];
+  return seq.map((j,k) => {
+    const canRH = (j.type==='LD' || j.type==='GO');
+    return `<tr class="${j.r_c>0?'rh':''}">
+      <td class="k">${k+1}</td>
+      <td><input value="${esc(j.id)}" data-s="${side}" data-k="${k}" data-f="id" style="width:74px"></td>
+      <td><select data-s="${side}" data-k="${k}" data-f="type" style="width:60px">
+        ${types.map(t=>`<option${j.type===t?' selected':''}>${t}</option>`).join('')}</select></td>
+      <td><input type="number" value="${j.bay}" data-s="${side}" data-k="${k}" data-f="bay" style="width:64px"></td>
+      <td><input type="number" value="${j.r_c||0}" min="0" data-s="${side}" data-k="${k}" data-f="r_c"
+                 style="width:46px"${canRH?'':' disabled'}></td>
+      <td><input value="${esc(rhText(j))}" placeholder="${canRH && j.r_c? '제자리':''}" data-s="${side}"
+                 data-k="${k}" data-f="rh_d" style="width:130px"${canRH && j.r_c?'':' disabled'}></td>
+      <td><input type="number" step="any" min="0" value="${j.a??''}" placeholder="기본" data-s="${side}" data-k="${k}"
+                 data-f="a" style="width:84px"></td>
+      <td><div class="mv">
+        <button class="ghost" data-mv="${side}:${k}:-1" title="위로">↑</button>
+        <button class="ghost" data-mv="${side}:${k}:1" title="아래로">↓</button>
+        <button class="ghost danger" data-del="${side}:${k}" title="삭제">×</button></div></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="muted small" style="padding:12px">작업이 없습니다.</td></tr>`;
+}
+
+function renderInstance(){
+  const i = state.instance;
+  $('#inst-name').value = i.name||''; $('#inst-id').value = i.id||'';
+  $('#inst-note').value = i.note||'';
+  $('#p-nbay').value = i.block.n_bay;
+  $('#p-scinit').value = i.block.sc_init ?? ''; $('#p-lcinit').value = i.block.lc_init ?? '';
+  $('#hint-init').innerHTML = (i.meta && i.meta.source==='realdata')
+    ? `실데이터 <b>${esc(i.meta.block)}</b> ${esc(i.meta.window.start)} +${i.meta.window.minutes}분 · 크레인 ${i.meta.cranes.SC}/${i.meta.cranes.LC}` : '';
+  const p = i.params;
+  $('#p-t_hat').value = p.t_hat; $('#p-safety').value = p.safety_margin;
+  $('#p-pick').value = p.pick; $('#p-drop').value = p.drop;
+  $('#p-rh').value = p.rh_inplace; $('#p-ready').value = p.default_ready;
+  renderSeqs();
+}
+
+function renderSeqs(){
+  const i = state.instance;
+  $('#sc-rows').innerHTML = seqRows('sc');
+  $('#lc-rows').innerHTML = seqRows('lc');
+  const rc = s => i['seq_'+s].reduce((a,j)=>a+(+j.r_c||0),0);
+  $('#sc-count').textContent = `(${i.seq_sc.length}작업 · RH ${rc('sc')})`;
+  $('#lc-count').textContent = `(${i.seq_lc.length}작업 · RH ${rc('lc')})`;
+  bindSeq();
+  renderDerived();
+  renderPreview();
+  validate();
+}
+
+function bindSeq(){
+  $$('[data-s][data-f]').forEach(el => el.onchange = () => {
+    const j = state.instance['seq_'+el.dataset.s][+el.dataset.k], f = el.dataset.f;
+    if (f==='id') j.id = el.value.trim();
+    else if (f==='type') {
+      j.type = el.value;
+      if (j.type==='DS' || j.type==='GI') { j.r_c = 0; j.rh_d = null; }
+      return renderSeqs();
+    }
+    else if (f==='a') j.a = el.value==='' ? null : +el.value;
+    else if (f==='rh_d') {
+      const v = el.value.split(/[,\s]+/).filter(x=>x!=='').map(Number);
+      j.rh_d = v.length ? v : null;
+    }
+    else if (f==='r_c') {
+      j.r_c = Math.max(0, +el.value||0);
+      if (j.rh_d && j.rh_d.length !== j.r_c) j.rh_d = null;
+      return renderSeqs();
+    }
+    else j[f] = +el.value;
+    renderPreview(); renderDerived(); validate();
+  });
+  $$('[data-mv]').forEach(el => el.onclick = () => {
+    const [side,k,dir] = el.dataset.mv.split(':'); const seq = state.instance['seq_'+side];
+    const a = +k, b = a + (+dir);
+    if (b<0 || b>=seq.length) return;
+    [seq[a], seq[b]] = [seq[b], seq[a]];
+    renderSeqs();
+  });
+  $$('[data-del]').forEach(el => el.onclick = () => {
+    const [side,k] = el.dataset.del.split(':');
+    state.instance['seq_'+side].splice(+k,1); renderSeqs();
+  });
+}
+
+$$('[data-add]').forEach(b => b.onclick = () => {
+  const [side, type] = b.dataset.add.split(':');
+  const i = state.instance, seq = i['seq_'+side];
+  const used = new Set(i.seq_sc.concat(i.seq_lc).map(j=>j.id));
+  let n = 1; while (used.has(`${type}_${n}`)) n++;
+  const job = {id:`${type}_${n}`, type, bay:Math.max(1, Math.round(i.block.n_bay/2)), r_c:0, rh_d:null, a:null};
+  if (type==='GO') {
+    const as = seq.filter(j=>j.type==='GO' && j.a!=null).map(j=>+j.a);
+    job.a = as.length ? Math.max(...as) + 10 : 0;
+  }
+  seq.push(job); renderSeqs();
+});
+
+$$('#tab-run .body input[id^="p-"], #inst-name, #inst-id, #inst-note').forEach(el => el.oninput = () => {
+  readInstance(); renderDerived(); renderPreview(); validate();
+});
+
+function renderDerived(){
+  const i = state.instance, p = i.params, n = i.block.n_bay;
+  const dist = (+p.safety_margin) + 1;
+  const all = i.seq_sc.concat(i.seq_lc);
+  const cnt = t => all.filter(j=>j.type===t).length;
+  const nrh = all.reduce((a,j)=>a+(+j.r_c||0),0);
+  const moved = all.reduce((a,j)=>a+((j.rh_d||[]).filter(d=>+d!==+j.bay).length),0);
+  $('#hint-safety').innerHTML = `안전거리 = <b>${dist} bay</b>`;
+  $('#hint-nbay').innerHTML = `해측 TP 0 · 육측 TP ${n+1}`;
+  $('#derived-info').innerHTML = `
+    <div><span class="k">작업</span> DS ${cnt('DS')} · LD ${cnt('LD')} · GI ${cnt('GI')} · GO ${cnt('GO')}
+      = <b>${all.length}개</b>, rehandle <b>${nrh}개</b> <span class="muted">(다른 bay 로 옮김 ${moved})</span></div>
+    <div><span class="k">작업 시간</span> |o − d| × ${p.t_hat} + ${p.pick} + ${p.drop}</div>
+    <div><span class="k">rehandle 1개</span> 같은 bay ρ = <b>${p.rh_inplace}</b> · 다른 bay |Δ| × ${p.t_hat} + ${(+p.pick)+(+p.drop)}</div>
+    <div><span class="k">트럭 대기</span> 출발 − 도착 a · DS·GI 는 시작 + ${p.pick} 에, LD·GO 는 완료에 출발</div>
+    <div><span class="k">비교군</span> LD·GO 처리시간 += Σ(rehandle + 본 작업 bay 로 복귀)</div>
+    <div><span class="k">협업 모델</span> rehandle = 독립 작업 <code>작업id_rN</code>, 할당 x 로 SC/LC 결정</div>`;
+}
+
+function renderPreview(){
+  const i = state.instance, n = Math.max(3, +i.block.n_bay||3);
+  const W = 440, padL = 30, padR = 14, rowSC = 112, rowLC = 50, H = 160;
+  const sx = b => padL + b/(n+1)*(W-padL-padR);
+  let g = '';
+  for (let b=0; b<=n+1; b++){
+    const major = (b===0 || b===n+1 || (b%(n>40?10:5)===0 && n+1-b>=2));
+    g += `<line x1="${sx(b)}" y1="24" x2="${sx(b)}" y2="${H-18}" stroke="${major?'#e3e7ec':'#f3f5f7'}"/>`;
+    if (major) g += `<text x="${sx(b)}" y="${H-5}" font-size="10" fill="#6b7683" text-anchor="middle">${b}</text>`;
+  }
+  g += `<text x="${sx(0)}" y="16" font-size="10" fill="#6b7683" text-anchor="start">Sea TP</text>
+        <text x="${sx(n+1)}" y="16" font-size="10" fill="#6b7683" text-anchor="end">Land TP</text>
+        <text x="2" y="${rowLC+4}" font-size="11" font-weight="600" fill="var(--lc)">LC</text>
+        <text x="2" y="${rowSC+4}" font-size="11" font-weight="600" fill="var(--sc)">SC</text>`;
+  const draw = (seq, y, up) => {
+    const stack = {};
+    seq.forEach((j, k) => {
+      const lvl = stack[j.bay] = (stack[j.bay]||0) + 1;
+      const yy = y + (up ? -1 : 1) * (lvl-1) * 9;
+      const x = sx(+j.bay);
+      (j.rh_d||[]).forEach(d => {
+        if (+d !== +j.bay) g += `<path d="M ${x} ${yy} Q ${(x+sx(+d))/2} ${yy+(up?16:-16)} ${sx(+d)} ${yy}"
+             fill="none" stroke="var(--t-rh)" stroke-dasharray="3 2"/>`;
+      });
+      g += `<circle cx="${x}" cy="${yy}" r="${j.r_c?6:4.5}" fill="${TYPE_COLOR[j.type]||'#999'}">
+              <title>${esc(j.id)} (${j.type}) bay ${j.bay}${j.r_c?` · rehandle ${j.r_c}`:''}${j.a!=null?` · a=${j.a}`:''} · 순서 ${k+1}</title></circle>`;
+      if (j.r_c) g += `<text x="${x}" y="${yy+3.5}" font-size="9" fill="#fff" text-anchor="middle" font-weight="700">${j.r_c}</text>`;
+    });
+  };
+  draw(i.seq_lc, rowLC, true);
+  draw(i.seq_sc, rowSC, false);
+  const legend = ['DS','LD','GI','GO'].map(t=>`<span><i style="background:${TYPE_COLOR[t]}"></i>${t}</span>`).join('') +
+    `<span>원 안 숫자 = rehandle 개수 · 점선 = 다른 bay 로 옮기는 rehandle</span>`;
+  $('#inst-preview').innerHTML = `<div class="legend" style="padding:8px 10px 0">${legend}</div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${g}</svg>`;
+}
+
+// ---------------------------------------------------------------- generator
+$('#btn-gen').onclick = () => { const p=$('#gen-panel'); p.style.display = p.style.display==='none'?'':'none'; };
+$('#btn-gen-close').onclick = () => { $('#gen-panel').style.display='none'; };
+$('#btn-gen-run').onclick = async () => {
+  const count = Math.max(1, +$('#gen-count').value || 1);
+  const body = {
+    n_bay:+$('#gen-bays').value||30, n_ds:+$('#gen-ds').value||0, n_ld:+$('#gen-ld').value||0,
+    n_gi:+$('#gen-gi').value||0, n_go:+$('#gen-go').value||0,
+    rh_prob_go:+$('#gen-rhp-go').value, rh_prob_ld:+$('#gen-rhp-ld').value,
+    rh_dist:$('#gen-rhdist').value, rh_max:+$('#gen-rhmax').value||0,
+    rh_move_prob:+$('#gen-mvp').value, rh_move_span:+$('#gen-span').value||1,
+    sc_gap:+$('#gen-scgap').value||0, lc_gap:+$('#gen-lcgap').value||0,
+    arrival:$('#gen-arrival').value, burst_size:+$('#gen-burst').value||1, go_bay:$('#gen-gobay').value,
+    seed: $('#gen-seed').value===''?null:+$('#gen-seed').value,
+    count, name:$('#gen-name').value.trim()||null,
+    params: readInstance().params, save: count>1,
+  };
+  $('#btn-gen-run').disabled = true;
+  try {
+    const res = await post('/api/generate', body);
+    const list = res.instances||[];
+    if (!list.length){
+      const why = String(res.error||'').trim().split('\n').filter(Boolean).pop() || '알 수 없는 오류';
+      $('#gen-result').innerHTML = `<span class="pill err">생성 실패</span> <span class="small">${esc(why)}</span>
+        <div class="hint" style="margin-top:4px">코드를 업데이트한 뒤 서버를 다시 켜지 않았다면 터미널에서 Ctrl+C 후 <code>python run_server.py</code> 로 재시작하세요.</div>`;
+      return;
+    }
+    state.instance = list[0]; renderInstance();
+    $('#gen-result').innerHTML = count===1
+      ? `<span class="pill ok">생성됨</span> ${esc(list[0].name)} — 편집기에 불러왔습니다.`
+      : `<span class="pill ok">${list.length}개 생성·저장됨</span> ${list.map(i=>esc(i.name)).join(', ')}
+         <span class="muted">— 인스턴스 탭에서 볼 수 있습니다.</span>`;
+  } finally { $('#btn-gen-run').disabled = false; }
+};
+$('#btn-preset').onclick = () => { state.instance = deep(state.config.default_instance); renderInstance(); };
+$('#btn-preset-small').onclick = () => { state.instance = deep(state.config.small_instance); renderInstance(); };
+// ---------------------------------------------------------------- 생성기 보정 프리셋
+$('#btn-gen-preset').onclick = () => fillPreset('');
+$('#btn-gen-preset-queue').onclick = () => fillPreset('queue');
+$('#btn-gen-preset-ld').onclick = () => fillPreset('ld');
+$('#btn-gen-preset-rolling').onclick = () => fillPreset('rolling');
+async function fillPreset(kind){
+  const p = await api('/api/generator/preset' + (kind ? '?kind=' + kind : ''));
+  const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+  set('#gen-bays', p.n_bay); set('#gen-ds', p.n_ds); set('#gen-ld', p.n_ld); set('#gen-gi', p.n_gi); set('#gen-go', p.n_go);
+  set('#gen-rhp-go', p.rh_prob_go); set('#gen-rhp-ld', p.rh_prob_ld); set('#gen-rhmax', p.rh_max); set('#gen-rhdist', p.rh_dist);
+  set('#gen-mvp', p.rh_move_prob); set('#gen-span', p.rh_move_span); set('#gen-scgap', p.sc_gap); set('#gen-lcgap', p.lc_gap);
+  set('#gen-arrival', p.arrival || 'even'); set('#gen-burst', p.burst_size || 3); set('#gen-gobay', p.go_bay || 'uniform');
+  const q = p.params;
+  set('#p-t_hat', q.t_hat); set('#p-pick', q.pick); set('#p-drop', q.drop); set('#p-rh', q.rh_inplace);
+  set('#p-safety', q.safety_margin); set('#p-ready', q.default_ready);
+  readInstance(); renderDerived(); validate();
+  $('#gen-result').innerHTML = `<span class="pill ok">${kind==='queue' ? '대기열 있는 보정값을 채웠습니다' : kind==='ld' ? '적하 rehandle 실험값을 채웠습니다' : kind==='rolling' ? '롤링 실험값을 채웠습니다' : '실데이터 보정값을 채웠습니다'}</span>
+    <span class="small">${esc(p.note || '2시간 분량')} · 초 단위 (t̂ ${q.t_hat}, pick/drop ${q.pick}/${q.drop}, ρ ${q.rh_inplace}) · 트럭 간격 SC ${p.sc_gap} / LC ${p.lc_gap} s · 안전 여유 ${q.safety_margin} 는 가정값. "생성" 을 누르세요.</span>`;
+}
+
+// ---------------------------------------------------------------- 실데이터 가져오기
+const REAL = {status:null, day:null};
+$('#btn-real').onclick = async () => {
+  const p = $('#real-panel'), show = p.style.display === 'none';
+  p.style.display = show ? '' : 'none';
+  if (show) await realInit();
+};
+$('#btn-real-close').onclick = () => { $('#real-panel').style.display = 'none'; };
+
+async function realInit(){
+  const st = REAL.status = await api('/api/realdata/status');
+  $('#real-src').textContent = st.available ? `${st.files.join(', ')}` : '';
+  if (!st.available) {
+    $('#real-status').innerHTML = `<div class="msg warn">원본 CSV 를 찾지 못했습니다: <code>${esc(st.source_dir)}</code><br>
+      연구 폴더 <code>data/</code> 에 원본 CSV 를 두거나 <code>python run_server.py --realdata 폴더</code> 로 지정하세요.</div>`;
+    return;
+  }
+  if (!st.indexed) {
+    $('#real-status').innerHTML = `<span class="spinner"></span> 처음 한 번 원본을 읽어 날짜별 색인을 만드는 중입니다 (수십 초)…`;
+    const r = await post('/api/realdata/index', {});
+    if (r.error) { $('#real-status').innerHTML = `<div class="msg err">${esc(r.error)}</div>`; return; }
+    REAL.status = r;
+    $('#real-status').innerHTML = `<span class="pill ok">색인 완료</span> ${r.days.length}일 · ${r.build_sec}초`;
+  } else {
+    $('#real-status').innerHTML = `<span class="pill ok">색인 있음</span> ${st.days.length}일 (${st.days[0]} ~ ${st.days[st.days.length-1]})`;
+  }
+  $('#real-safety').value = REAL.status.default_safety_margin;
+  const days = REAL.status.days;
+  const prefer = days.includes('2025-01-06') ? '2025-01-06' : days[0];
+  $('#real-date').innerHTML = days.map(d => `<option${d===prefer?' selected':''}>${d}</option>`).join('');
+  await realLoadDay();
+  realCandidates();
+}
+
+// ---------------------------------------------------------------- 실험 인스턴스 세트 (app/instance_sets.py)
+const SETS = {data:null, set:'rolling5h', filter:'', pick:null};
+$('#btn-sets').onclick = () => {
+  const p = $('#set-panel'); const show = p.style.display === 'none';
+  p.style.display = show ? '' : 'none';
+  if (show && !SETS.data) loadSets();
+};
+async function loadSets(){
+  try { SETS.data = (await api('/api/instance_sets')).sets; }
+  catch(e){ $('#set-box').innerHTML = `<span class="pill err">불러오기 실패</span> <span class="small">서버를 다시 켜 주세요 (새 기능)</span>`; return; }
+  renderSets();
+}
+function setPlot(rows){
+  // 부하 지도: x = SC 부하, y = LC 부하 (작업량 / 5시간). 균형 = 파랑, 극단 = 주황
+  const W = 400, H = 300, L = 44, B = 36, T = 12, R = 12, lo = 0.2, hi = 1.3;
+  const x = v => L + (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo) * (W - L - R);
+  const y = v => H - B - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo) * (H - B - T);
+  const ticks = [0.3, 0.5, 0.7, 0.9, 1.1];
+  let g = ticks.map(t => `<line x1="${x(t)}" y1="${T}" x2="${x(t)}" y2="${H-B}" stroke="#eef1f5"/>
+      <line x1="${L}" y1="${y(t)}" x2="${W-R}" y2="${y(t)}" stroke="#eef1f5"/>
+      <text x="${x(t)}" y="${H-B+14}" font-size="10" text-anchor="middle" fill="#667">${t}</text>
+      <text x="${L-6}" y="${y(t)+3}" font-size="10" text-anchor="end" fill="#667">${t}</text>`).join('');
+  g += `<line x1="${x(1)}" y1="${T}" x2="${x(1)}" y2="${H-B}" stroke="#f3b4b4" stroke-dasharray="3 3"/>
+        <line x1="${L}" y1="${y(1)}" x2="${W-R}" y2="${y(1)}" stroke="#f3b4b4" stroke-dasharray="3 3"/>
+        <text x="${(L+W-R)/2}" y="${H-6}" font-size="11" text-anchor="middle" fill="#334">SC(해측) 부하 ρ</text>
+        <text x="12" y="${(T+H-B)/2}" font-size="11" text-anchor="middle" fill="#334" transform="rotate(-90 12 ${(T+H-B)/2})">LC(육측) 부하 ρ</text>`;
+  g += rows.map(r => `<circle data-sid="${esc(r.id)}" class="${SETS.pick===r.id?'on':''}" cx="${x(r.rho_sc).toFixed(1)}" cy="${y(r.rho_lc).toFixed(1)}" r="5"
+      fill="${r.group==='균형' ? '#3b6fe0' : '#ea7a2c'}" fill-opacity=".8"><title>${esc(r.name)} · ρ ${r.rho_sc.toFixed(2)} / ${r.rho_lc.toFixed(2)}</title></circle>`).join('');
+  return `<svg class="set-plot" viewBox="0 0 ${W} ${H}" role="img" aria-label="세트 인스턴스의 SC·LC 부하 분포">${g}</svg>`;
+}
+function renderSets(){
+  const d = (SETS.data||[]).find(x => x.set === SETS.set) || (SETS.data||[])[0];
+  if (!d){ $('#set-box').innerHTML = '<span class="small muted">세트가 없습니다.</span>'; return; }
+  const rows = d.rows.filter(r => !SETS.filter || r.group === SETS.filter);
+  const cnt = g => d.rows.filter(r => r.group === g).length;
+  const tag = g => g === '균형' ? 'bal' : 'ext';
+  $('#set-box').innerHTML = `
+    <div class="gentitle" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(d.title)}
+      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">
+        <button class="ghost small-btn" data-sf="">전체 ${d.rows.length}</button>
+        <button class="ghost small-btn" data-sf="균형"><span class="ctag bal">균형</span> ${cnt('균형')}</button>
+        <button class="ghost small-btn" data-sf="극단"><span class="ctag ext">극단</span> ${cnt('극단')}</button>
+        <button class="ghost small-btn" id="btn-set-save" title="보이는 인스턴스를 인스턴스 목록에 저장 (같은 내용은 한 번만)">${SETS.filter ? SETS.filter + ' 묶음' : '전체'} 목록에 저장</button>
+      </span></div>
+    <div class="small muted" style="margin-bottom:8px">${esc(d.note)} 행이나 점을 누르면 편집기에 불러옵니다. 출처: ${esc(d.source||'')}</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:0 1 400px;min-width:260px">${setPlot(rows)}
+        <div class="small muted">점 = 인스턴스 하나의 실제 부하 (작업량 ÷ 5시간). 1 을 넘으면(점선 밖) 그 크레인은 일이 넘침.</div></div>
+      <div class="cand-wrap" style="flex:1 1 420px;min-width:0;max-height:360px;overflow:auto"><table class="cand-table">
+        <thead><tr><th>묶음</th><th>이름</th>
+          <th class="num" title="DS · LD · GI · GO">작업</th>
+          <th class="num" title="적하(LD) / 반출(GO) rehandle 수">RH 적하/반출</th>
+          <th class="num" title="실제 부하 ρ (작업량 ÷ 5시간)">부하 SC / LC</th>
+          <th class="num" title="마지막 트럭 도착 (시간)">마지막 도착</th></tr></thead>
+        <tbody>${rows.map(r => `<tr data-sid="${esc(r.id)}" class="${SETS.pick===r.id?'on':''}" title="${esc(r.desc)}">
+          <td><span class="ctag ${tag(r.group)}">${esc(r.group)}</span></td><td>${esc(r.label)} #${esc(r.key.split('_').pop())}</td>
+          <td class="num">${r.n_ds}·${r.n_ld}·${r.n_gi}·${r.n_go}</td><td class="num">${r.rh_ld} / ${r.rh_go}</td>
+          <td class="num">${r.rho_sc.toFixed(2)} / ${r.rho_lc.toFixed(2)}</td><td class="num">${r.last_arrival_h.toFixed(1)}h</td></tr>`).join('')}
+        </tbody></table></div>
+    </div>
+    <div id="set-msg" class="small" style="margin-top:6px"></div>`;
+  $$('#set-box [data-sf]').forEach(b => b.onclick = () => { SETS.filter = b.dataset.sf; renderSets(); });
+  $$('#set-box [data-sid]').forEach(el => el.onclick = () => pickSetInstance(el.dataset.sid));
+  $('#btn-set-save').onclick = saveSet;
+}
+async function pickSetInstance(id){
+  const d = (SETS.data||[]).find(x => x.set === SETS.set);
+  SETS.pick = id; renderSets();
+  const r = await api(`/api/instance_sets/${encodeURIComponent(SETS.set)}/${encodeURIComponent(id)}`);
+  state.instance = r.instance; renderInstance();
+  const row = d && d.rows.find(x => x.id === id);
+  $('#set-msg').innerHTML = `<span class="pill ok">불러옴</span> ${esc(r.instance.name)} — ${esc(row ? row.desc : '')}.
+    <span class="muted">'롤링 · …' 방법과 함께 돌리세요 (AGV 정보 H 는 방법 옵션). 작업이 많아 협업 MIP 는 오래 걸립니다.</span>`;
+}
+async function saveSet(){
+  const btn = $('#btn-set-save'); btn.disabled = true;
+  try {
+    const r = await post('/api/instance_sets/save', {set: SETS.set, group: SETS.filter});
+    $('#set-msg').innerHTML = `<span class="pill ok">${(r.saved_ids||[]).length}개 저장</span> 인스턴스 탭과 홈 선택 목록에서 <b>[5h 균형]</b> · <b>[5h 극단]</b> 으로 찾을 수 있습니다.`;
+    try { await renderHomeInstances(); } catch(e){}
+  } finally { btn.disabled = false; }
+}
+// ---------------------------------------------------------------- 추천 실험 구간 (analysis/instance_candidates)
+const CAND = {data:null, filter:'', pick:null};
+const CAND_DESC = {
+  A1: 'LC 밀림 + SC 여유 (SC 본 작업 있음) — 지원 효과를 보는 주 실험',
+  A2: 'LC 밀림 + SC 거의 빔 — 지원 여지가 가장 큰 경우',
+  B:  '둘 다 바쁨 — SC 가 바빠 규칙상 돕기 어려운 대조군',
+  C:  '평상시 — 대기가 짧아 도울 일이 적은 대조군',
+};
+async function realCandidates(){
+  const box = $('#real-cand');
+  let d;
+  try { d = CAND.data = await api('/api/realdata/candidates'); } catch(e){ box.innerHTML = ''; return; }
+  if (!d.available){
+    box.innerHTML = `<div class="small muted">추천 실험 구간 파일이 없습니다: <code>${esc(d.dir)}/candidates.csv</code></div>`; return;
+  }
+  const tags = [...new Set(d.rows.map(r => r.tag))];
+  const rows = d.rows.filter(r => !CAND.filter || r.tag === CAND.filter);
+  const pc = v => v==null ? '–' : (v > 0 ? '−' : v < 0 ? '+' : '') + Math.abs(v).toFixed(1) + '%';
+  box.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px">
+      <b class="small">추천 실험 구간</b>
+      <span class="small muted">행을 누르면 그 구간(60분)을 바로 불러옵니다</span>
+      <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">
+        <button class="ghost small-btn" data-cf="">전체 ${d.rows.length}</button>
+        ${tags.map(t => `<button class="ghost small-btn" data-cf="${t}" title="${esc(CAND_DESC[t]||'')}"><span class="ctag ${t}">${t}</span> ${d.rows.filter(r=>r.tag===t).length}</button>`).join('')}
+        <button class="ghost small-btn" id="btn-cand-save" title="보이는 구간을 모두 인스턴스 목록에 저장 (이름 앞에 [추천 A1] 등)">${CAND.filter ? CAND.filter + ' 묶음' : '전체'} 목록에 저장</button>
+      </span>
+    </div>
+    ${CAND.filter ? `<div class="small muted" style="margin-bottom:4px">${esc(CAND_DESC[CAND.filter]||'')}</div>` : ''}
+    <div class="cand-wrap"><table class="cand-table">
+      <thead><tr><th>묶음</th><th>날짜</th><th>블록</th><th>시각</th>
+        <th class="num" title="반출 / 반입 / SC 본 작업(DS·LD) 수">GO·GI·SC</th>
+        <th class="num" title="GO rehandle 개수">GO RH</th>
+        <th class="num" title="그 시간 GO 트럭 대기(완료−요청) 중앙값">GO 대기</th>
+        <th class="num" title="그 시간 SC 가 무언가(AH 포함) 하던 비율">SC 가동</th>
+        <th class="num" title="창 규칙: 지원을 끈 같은 디코더 대비 트럭 대기 변화 (미리 돌려 본 값)">창 규칙</th>
+        <th class="num" title="협업 MIP: 비교군 MIP 대비 (이 서버 Gurobi 로 못 푼 구간은 –)">협업 MIP</th></tr></thead>
+      <tbody>${rows.map(r => {
+        const k = `${r.day}|${r.block}|${r.start}`;
+        return `<tr data-ck="${esc(k)}" class="${CAND.pick===k?'on':''}" title="${esc(r.group)}">
+          <td><span class="ctag ${r.tag}">${r.tag}</span></td><td>${r.day}</td><td>${esc(r.block)}</td><td>${r.start}</td>
+          <td class="num">${r.n_go} · ${r.n_gi} · ${r.n_sc_main}</td><td class="num">${r.go_rh}</td>
+          <td class="num">${r.go_wait_med_min==null?'–':r.go_wait_med_min.toFixed(0)+'분'}</td>
+          <td class="num">${r.sc_busy==null?'–':Math.round(r.sc_busy*100)+'%'}</td>
+          <td class="num">${pc(r.window_gain_pct)}</td><td class="num">${pc(r.coop_gain_pct)}</td></tr>`;
+      }).join('')}</tbody></table></div>
+    <div id="cand-msg" class="small" style="margin-top:4px"></div>`;
+  $$('#real-cand [data-cf]').forEach(b => b.onclick = () => { CAND.filter = b.dataset.cf; realCandidates(); });
+  $$('#real-cand tr[data-ck]').forEach(tr => tr.onclick = () => realPickCandidate(tr.dataset.ck));
+  $('#btn-cand-save').onclick = realSaveCandidates;
+}
+async function realPickCandidate(k){
+  const [day, block, start] = k.split('|');
+  CAND.pick = k;
+  $$('#real-cand tr[data-ck]').forEach(tr => tr.classList.toggle('on', tr.dataset.ck === k));
+  $('#real-min').value = 60;
+  $('#real-block').dataset.want = block;
+  if ($('#real-date').value !== day){ $('#real-date').value = day; await realLoadDay(); }
+  $('#real-block').value = block; realDrawHours();
+  $('#real-start').value = start; realWindowPreview();
+  $('#btn-real-run').click();
+}
+async function realSaveCandidates(){
+  const btn = $('#btn-cand-save'); btn.disabled = true;
+  $('#cand-msg').innerHTML = '<span class="spinner"></span> 저장하는 중…';
+  try {
+    const groups = CAND.filter ? CAND.data.groups.filter(g => g.split(' ')[0] === CAND.filter) : [];
+    const r = await post('/api/realdata/candidates/save', {
+      groups, minutes: 60, safety_margin: +$('#real-safety').value,
+      use_real_init: $('#real-init').checked, ld_rh: $('#real-ldrh').value });
+    $('#cand-msg').innerHTML = `<span class="pill ok">${(r.saved_ids||[]).length}개 저장</span>
+      홈의 인스턴스 선택과 인스턴스 탭에서 <b>[추천 ${esc(CAND.filter||'A1')}]</b> 처럼 이름으로 찾을 수 있습니다.
+      ${(r.failed||[]).length ? `<span class="pill warn">실패 ${r.failed.length}</span> ${esc(r.failed.join(' / '))}` : ''}`;
+    try { await renderHomeInstances(); } catch(e){}
+  } finally { btn.disabled = false; }
+}
+$('#real-date').onchange = realLoadDay;
+$('#real-ldrh').onchange = realLoadDay;
+$('#real-block').onchange = realDrawHours;
+
+async function realLoadDay(){
+  const d = $('#real-date').value;
+  $('#real-block').innerHTML = '<option>불러오는 중…</option>';
+  const r = REAL.day = await api('/api/realdata/day?date=' + encodeURIComponent(d) + '&ld_rh=' + encodeURIComponent($('#real-ldrh').value));
+  const cur = $('#real-block').dataset.want || 'A24';
+  $('#real-block').innerHTML = (r.blocks||[]).map(b =>
+    `<option value="${esc(b.block)}"${b.block===cur?' selected':''}>${esc(b.block)} · ${b.sc}/${b.lc} · 본 작업 ${b.main} · RH GO ${b.go_rh} / LD ${b.ld_rh||0} · bay ${b.n_bay}</option>`).join('')
+    || '<option value="">이 날짜에 작업이 없습니다</option>';
+  realDrawHours();
+}
+
+function realDrawHours(){
+  const b = (REAL.day && REAL.day.blocks || []).find(x => x.block === $('#real-block').value);
+  $('#real-block').dataset.want = $('#real-block').value;
+  if (!b) { $('#real-hours').innerHTML = ''; return; }
+  const W = 460, H = 92, padL = 22, padB = 16, bw = (W - padL - 4) / 24;
+  const rhOf = h => (h.rh ?? ((h.go_rh||0) + (h.ld_rh||0)));
+  const mx = Math.max(1, ...b.hours.map(h => Math.max(h.main, rhOf(h))));
+  const sy = v => (H - padB) - v / mx * (H - padB - 8);
+  let g = '';
+  b.hours.forEach((h, k) => {
+    const x = padL + k * bw;
+    g += `<g class="hbar" data-h="${k}" style="cursor:pointer">
+      <rect x="${x}" y="0" width="${bw}" height="${H - padB}" fill="transparent"/>
+      <rect x="${x + 1}" y="${sy(h.sc + h.lc)}" width="${bw * 0.5 - 1}" height="${(H - padB) - sy(h.sc + h.lc)}" fill="var(--accent)" fill-opacity=".75"/>
+      <rect x="${x + bw * 0.5}" y="${sy(rhOf(h))}" width="${bw * 0.5 - 1}" height="${(H - padB) - sy(rhOf(h))}" fill="var(--t-rh)"/>
+      <title>${k}시 · 본 작업 ${h.main} (SC ${h.sc} / LC ${h.lc}) · rehandle GO ${h.go_rh} / LD ${h.ld_rh||0}</title></g>`;
+    if (k % 3 === 0) g += `<text x="${x + bw / 2}" y="${H - 3}" font-size="9.5" fill="#6b7683" text-anchor="middle">${k}</text>`;
+  });
+  g += `<text x="2" y="10" font-size="9.5" fill="#6b7683">${mx}</text>`;
+  const srcTxt = {record:'LD rehandle = RH_CNT 기록', infer:'LD rehandle = 직전 AH 로 추정 (이 날짜는 LD RH_CNT 미기록)', mixed:'LD rehandle = 이날 12:04 부터 RH_CNT 기록, 그 전은 직전 AH 로 추정', none:'LD rehandle 넣지 않음'}[REAL.day.ld_rh_source] || '';
+  $('#real-hours').innerHTML = `<div class="legend" style="padding:0 0 2px"><span><i style="background:var(--accent)"></i>본 작업 / 시간</span>
+      <span><i style="background:var(--t-rh)"></i>rehandle (GO+LD) / 시간</span><span>막대를 누르면 그 시각부터</span>${srcTxt?`<span class="muted">${esc(srcTxt)}</span>`:''}</div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:560px;display:block">${g}</svg>`;
+  $$('#real-hours .hbar').forEach(el => el.onclick = () => {
+    $('#real-start').value = String(el.dataset.h).padStart(2, '0') + ':00';
+    realWindowPreview();
+  });
+  realWindowPreview();
+}
+
+// 구간 미리보기: 시간대별 집계로 이 구간에 들어올 작업 수를 대략 보여 준다
+function realWindowPreview(){
+  const el = $('#real-window'); if (!el) return;
+  const b = (REAL.day && REAL.day.blocks || []).find(x => x.block === $('#real-block').value);
+  const [hh, mm] = ($('#real-start').value || '00:00').split(':').map(Number);
+  const mins = Math.max(0, +$('#real-min').value || 0);
+  const t0 = hh * 60 + mm, t1 = Math.min(24 * 60, t0 + mins);
+  const fmt = t => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+  if (!b || !mins) { el.innerHTML = ''; return; }
+  let sc = 0, lc = 0, rh = 0, rhl = 0;
+  b.hours.forEach((h, k) => {
+    const ov = Math.max(0, Math.min(t1, (k + 1) * 60) - Math.max(t0, k * 60)) / 60;   // 그 시간대와 겹치는 비율
+    sc += h.sc * ov; lc += h.lc * ov; rh += (h.go_rh||0) * ov; rhl += (h.ld_rh||0) * ov;
+  });
+  const n = Math.round(sc + lc), big = n + Math.round(rh + rhl) > 60;
+  el.innerHTML = `<b>${esc($('#real-date').value)} ${fmt(t0)} ~ ${fmt(t1)}</b> 사이에 <b>시작한</b> 작업만 잘라 옵니다
+    → 약 <b>${n}</b>개 (SC ${Math.round(sc)} / LC ${Math.round(lc)}) · rehandle 약 <b>${Math.round(rh + rhl)}</b>개 (GO ${Math.round(rh)} · LD ${Math.round(rhl)}).
+    트럭 도착 a 는 ${fmt(t0)} 를 0초로 잡은 값, 크레인 시작 위치는 ${fmt(t0)} 직전 기록 위치입니다.`
+    + (big ? `<br><span class="pill warn">큼</span> 작업+rehandle 60개 이상이면 협업 모델(Gurobi)이 오래 걸릴 수 있습니다. 길이를 줄여 보세요.` : '');
+}
+$('#real-start').addEventListener('input', realWindowPreview);
+$('#real-min').addEventListener('input', realWindowPreview);
+$('#real-block').addEventListener('change', realWindowPreview);
+
+$('#btn-real-run').onclick = async () => {
+  const blk = $('#real-block').value;
+  if (!blk) return;
+  $('#btn-real-run').disabled = true;
+  $('#real-result').innerHTML = '<span class="spinner"></span> 가져오는 중…';
+  try {
+    const r = await post('/api/realdata/build', {
+      date: $('#real-date').value, block: blk, start: $('#real-start').value || '09:00',
+      minutes: +$('#real-min').value || 60, safety_margin: +$('#real-safety').value,
+      use_real_init: $('#real-init').checked, save: $('#real-save').checked,
+      ld_rh: $('#real-ldrh').value,
+    });
+    if (r.error || !r.instance) {
+      const why = String(r.error||'').trim().split('\n').filter(Boolean).pop() || '알 수 없는 오류';
+      $('#real-result').innerHTML = `<span class="pill err">가져오기 실패</span> ${esc(why)}`; return;
+    }
+    state.instance = r.instance; renderInstance();
+    const m = r.meta, rep = m.report || {}, act = m.actual || {};
+    const kv = o => Object.entries(o||{}).map(([k,v]) => `${esc(k)} ${v}`).join(', ');
+    const nj = r.instance.seq_sc.length + r.instance.seq_lc.length;
+    $('#real-result').innerHTML = `
+      <div><span class="pill ok">불러옴</span> ${esc(r.instance.name)} — 본 작업 <b>${nj}</b>개
+        (SC ${r.instance.seq_sc.length} · LC ${r.instance.seq_lc.length}), rehandle GO <b>${rep.go_rh||0}</b>개 · LD <b>${rep.ld_rh||0}</b>개${rep.ld_rh?` (기록 ${rep.ld_rh_recorded||0} · 추정 ${rep.ld_rh_inferred||0})`:''}
+        (목적 bay 복원 ${rep.rh_restored||0}건${rep.rh_inplace_fallback?`, 복원 실패 ${rep.rh_inplace_fallback}건은 같은 bay 로`:''})
+        ${r.saved_id?' · 목록에 저장됨':''}</div>
+      <div class="muted" style="margin-top:3px">시작 위치 SC ${fmt(r.instance.block.sc_init)} · LC ${fmt(r.instance.block.lc_init)}
+        ${rep.init_adjusted?'<span class="pill warn">기록상 너무 가까워 안전거리만큼 벌림</span>':''}
+        · 구간 시작 전부터 기다리던 트럭 ${rep.waiting_before||0}대</div>
+      ${Object.keys(rep.skipped_type||{}).length?`<div class="muted">제외 (크레인-작업 유형 불일치): ${kv(rep.skipped_type)}</div>`:''}
+      ${Object.keys(rep.other_moves||{}).length?`<div class="muted">모델에 넣지 않은 기타 작업: ${kv(rep.other_moves)}</div>`:''}
+      <div class="muted">같은 구간 실제 기록: makespan ${fmt(act.makespan)}초 · Σ 트럭 대기 ${fmt(act.truck_wait_sum)}초
+        (내부 ${fmt(act.truck_wait_internal)} · 외부 ${fmt(act.truck_wait_external)}) — 실행하면 비교표에 참고 행으로 나옵니다.</div>
+      ${(r.validation.errors||[]).length?`<div class="msg err">${r.validation.errors.map(esc).join('<br>')}</div>`:''}`;
+  } finally { $('#btn-real-run').disabled = false; }
+};
+
+
+$('#btn-json').onclick = () => {
+  const c = $('#json-card'), show = c.style.display==='none';
+  c.style.display = show ? '' : 'none';
+  if (show) $('#json-area').value = JSON.stringify(readInstance(), null, 2);
+};
+$('#btn-json-apply').onclick = () => {
+  try { state.instance = JSON.parse($('#json-area').value); renderInstance(); }
+  catch(e){ alert('JSON 파싱 실패: ' + e.message); }
+};
+$('#btn-json-download').onclick = () => {
+  const blob = new Blob([JSON.stringify(readInstance(),null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = (state.instance.id||'instance')+'.json'; a.click();
+};
+
+// ---------------------------------------------------------------- home
+function renderHome(){
+  const ms = state.config.methods;
+  $('#home-count').textContent = `(${ms.length})`;
+  $('#home-solvers').innerHTML = ms.map(m => `
+    <div class="solvercard ${m.available ? (state.selected.has(m.key)?'on':'') : 'off'}" data-solver="${m.key}">
+      <div class="row" style="align-items:flex-start">
+        <span class="tick">${state.selected.has(m.key)?'✓':''}</span>
+        <div style="flex:1"><h3>${esc(m.label)}</h3><div class="paper">${esc(m.paper||'')}</div></div>
+        ${m.available?'<span class="pill ok">사용 가능</span>':'<span class="pill err">사용 불가</span>'}
+      </div>
+      <div class="desc">${esc(m.description)}</div>
+      <div class="foot">
+        <span class="tag">${ROLE_LABEL[m.role]||m.role||'모델'}</span>
+        <span class="tag">${esc(m.solver)}</span>
+      </div>
+      ${m.available?'':`<div class="msg err small" style="margin-top:9px">${esc(m.unavailable_reason)}</div>`}
+    </div>`).join('');
+  $$('[data-solver]').forEach(el => el.onclick = () => {
+    const key = el.dataset.solver, m = ms.find(x=>x.key===key);
+    if (!m.available) return;
+    state.selected.has(key) ? state.selected.delete(key) : state.selected.add(key);
+    renderHome(); syncMethodChecks();
+  });
+  const n = state.selected.size;
+  $('#home-start').disabled = n===0;
+  $('#home-hint').textContent = n===0 ? '모델을 하나 이상 선택하세요.'
+    : n===1 ? '모델 하나만 고르면 개선율은 계산되지 않습니다. 비교하려면 둘 다 고르세요.'
+    : '두 모델을 같은 인스턴스·같은 목적함수로 실행하고 비교군 대비 개선율을 보여줍니다.';
+  $('#home-notebooks').innerHTML = `<div style="margin-bottom:6px">노트북 폴더 <span class="nbpath">${esc(state.config.notebook_dir||'')}</span></div>` +
+    ms.map(m => `<div class="flexwrap" style="margin-bottom:4px">${m.available?'<span class="pill ok">연결됨</span>':'<span class="pill err">없음</span>'}
+      <b>${esc(m.short||m.label)}</b> <span class="muted">${esc(m.key)}</span></div>`).join('');
+}
+
+async function renderServerStatus(){
+  const {jobs} = await api('/api/jobs');
+  const active = (jobs||[]).filter(j => j.status==='running' || j.status==='queued');
+  const card = $('#server-status-card');
+  if (!active.length){
+    card.style.display = state.config.shared ? '' : 'none';
+    $('#server-status').innerHTML = '<div class="small muted">지금 실행 중인 실험이 없습니다.</div>';
+    return;
+  }
+  card.style.display = '';
+  $('#server-status').innerHTML = active.map(j => `
+    <div class="flexwrap" style="margin-bottom:6px">
+      ${j.status==='running' ? '<span class="pill warn">실행 중</span>' : `<span class="pill mute">대기 ${j.queue_position}번째</span>`}
+      <span class="small"><b>${esc(j.owner||'익명')}</b> · ${esc(j.label||j.run_id)}</span>
+      <span class="muted small">${j.status==='running' ? `${esc(j.current||'')} (${j.progress}/${j.total})` : ''}</span>
+    </div>`).join('');
+}
+$('#btn-refresh-jobs').onclick = renderServerStatus;
+
+async function renderHomeInstances(){
+  const saved = (await api('/api/instances')).instances || [];
+  const cur = $('#home-instance').value;
+  $('#home-instance').innerHTML =
+    `<option value="__default">Toy 12작업 (노트북 기본 인스턴스)</option>
+     <option value="__small">소형 5작업 (연결 확인용)</option>` +
+    saved.map(i=>`<option value="${esc(i.id)}">저장됨 · ${esc(i.name||i.id)} (${i.num_jobs}작업 · RH ${i.num_rehandles})</option>`).join('');
+  if (cur) $('#home-instance').value = cur;
+}
+$('#home-all').onclick = () => { state.config.methods.filter(m=>m.available).forEach(m=>state.selected.add(m.key)); renderHome(); syncMethodChecks(); };
+$('#home-none').onclick = () => { state.selected.clear(); renderHome(); syncMethodChecks(); };
+$('#home-start').onclick = async () => {
+  const v = $('#home-instance').value;
+  if (v==='__default') state.instance = deep(state.config.default_instance);
+  else if (v==='__small') state.instance = deep(state.config.small_instance);
+  else state.instance = (await api('/api/instances/'+v)).instance;
+  renderInstance(); goTab('run');
+};
+
+// ---------------------------------------------------------------- methods
+function renderMethods(){
+  $('#method-list').innerHTML = state.config.methods.map(m => {
+    const opts = Object.entries(m.options||{}).map(([k,o]) => {
+      if (o.type==='checkbox')
+        return `<div style="display:flex;align-items:flex-end;grid-column:span ${k.length>12?2:1}">
+          <label class="chk"><input type="checkbox" data-opt="${m.key}" data-optname="${k}" data-opttype="checkbox"${o.default?' checked':''}> ${esc(o.label||k)}</label></div>`;
+      if (o.type==='select')
+        return `<div><label>${esc(o.label||k)}</label>
+          <select data-opt="${m.key}" data-optname="${k}" data-opttype="select">${(o.choices||[]).map(c =>
+            `<option value="${esc(c)}"${c===o.default?' selected':''}>${esc(c)}</option>`).join('')}</select></div>`;
+      return `<div><label>${esc(o.label||k)}</label>
+        <input type="number" step="any" value="${o.default}" data-opt="${m.key}" data-optname="${k}"></div>`;
+    }).join('');
+    return `<div class="method" id="m-${m.key}">
+      <div class="head">
+        <input type="checkbox" data-m="${m.key}"${m.available?'':' disabled'}>
+        <span class="name">${esc(m.label)}</span>
+        <span class="tag">${ROLE_LABEL[m.role]||m.role||'모델'}</span>
+        ${m.available ? '' : '<span class="pill err">사용 불가</span>'}
+        <span class="muted small" style="margin-left:auto">${esc(m.solver)}</span>
+      </div>
+      <div class="small muted" style="margin-top:4px">${esc(m.description)}</div>
+      ${m.available?'':`<div class="msg err small" style="margin-top:6px">${esc(m.unavailable_reason)}</div>`}
+      <div class="opts"><div class="grid3">${opts}</div></div>
+    </div>`;
+  }).join('');
+  $$('[data-m]').forEach(el => el.onchange = () => {
+    el.checked ? state.selected.add(el.dataset.m) : state.selected.delete(el.dataset.m);
+    $('#m-'+el.dataset.m).classList.toggle('on', el.checked);
+  });
+  syncMethodChecks();
+}
+function syncMethodChecks(){
+  $$('[data-m]').forEach(el => {
+    el.checked = state.selected.has(el.dataset.m);
+    $('#m-'+el.dataset.m).classList.toggle('on', el.checked);
+  });
+}
+const selectedMethods = () => $$('[data-m]').filter(e=>e.checked).map(e=>e.dataset.m);
+function collectOptions(){
+  const out = {};
+  $$('[data-opt]').forEach(el => {
+    out[el.dataset.opt] = out[el.dataset.opt]||{};
+    out[el.dataset.opt][el.dataset.optname] = el.dataset.opttype==='checkbox' ? el.checked
+      : el.dataset.opttype==='select' ? el.value : +el.value;
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------- validation
+let validateTimer = null;
+function validate(){
+  clearTimeout(validateTimer);
+  validateTimer = setTimeout(async () => {
+    const res = await post('/api/validate', {instance: readInstance()});
+    const v = res.validation || {errors:[],warnings:[]};
+    let html = '';
+    if (v.errors.length) html += `<div class="msg err"><b>오류</b><br>${v.errors.map(esc).join('<br>')}</div>`;
+    if (v.warnings.length) html += `<div class="msg warn"><b>경고</b><br>${v.warnings.map(esc).join('<br>')}</div>`;
+    $('#validation').innerHTML = html;
+    $('#btn-run').disabled = v.errors.length > 0;
+  }, 180);
+}
+
+// ---------------------------------------------------------------- run
+$('#btn-run').onclick = async () => {
+  const methods = selectedMethods();
+  if (!methods.length) { alert('모델을 하나 이상 선택하세요.'); return; }
+  if (!$('#run-label').value.trim()) {
+    alert('실험 이름을 입력하세요.\n결과 보관함에서 이 이름으로 찾게 됩니다.');
+    $('#run-label').focus(); return;
+  }
+  $('#btn-run').disabled = true;
+  state.results = []; state.logs = {}; state.figures = {}; state.logOffset = 0;
+  state.runInstance = deep(readInstance());
+  state.objective = $('#run-objective').value;
+  try { localStorage.setItem('rw_owner', $('#run-owner').value); } catch(e){}
+  $('#console-out').textContent = ''; $('#console-card').style.display = '';
+  $('#btn-cancel').style.display = ''; $('#btn-cancel').disabled = false; $('#btn-cancel').textContent = '취소';
+  $('#console-hint').textContent = '';
+  const body = {
+    instance: readInstance(), methods, options: collectOptions(), objective: state.objective,
+    save_result: $('#save-result').checked, save_instance: $('#save-instance').checked,
+    label: $('#run-label').value, owner: $('#run-owner').value,
+  };
+  const {run_id} = await post('/api/run', body);
+  state.job = run_id;
+  poll(run_id);
+};
+$('#btn-cancel').onclick = async () => {
+  if (!state.job) return;
+  if (!confirm('실행을 취소할까요?\n지금까지 끝난 모델의 결과는 남습니다.')) return;
+  $('#btn-cancel').disabled = true; $('#btn-cancel').textContent = '취소 중…';
+  await post(`/api/jobs/${state.job}/cancel`, {});
+};
+$('#btn-console-clear').onclick = () => { $('#console-out').textContent = ''; };
+
+function appendConsole(chunk){
+  if (!chunk) return;
+  const pre = $('#console-out');
+  const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+  pre.textContent += chunk;
+  if (pre.textContent.length > 400000) pre.textContent = pre.textContent.slice(-300000);
+  if ($('#console-follow').checked || atBottom) pre.scrollTop = pre.scrollHeight;
+}
+
+async function poll(runId){
+  const snap = await api(`/api/jobs/${runId}?log_from=${state.logOffset||0}`);
+  if (snap.log_offset != null) state.logOffset = snap.log_offset;
+  appendConsole(snap.live_chunk);
+  state.results = snap.results || []; state.logs = snap.logs || {}; state.figures = snap.figures || {};
+  state.objective = snap.objective || state.objective;
+  renderResults();
+  const done = ['done','error','cancelled'].includes(snap.status);
+  if (done) {
+    $('#run-status').innerHTML = snap.status==='error' ? '<span class="pill err">실패</span>'
+      : snap.status==='cancelled' ? `<span class="pill warn">취소됨</span> ${snap.saved?'· 완료분은 저장됨':''}`
+      : `<span class="pill ok">완료</span> ${snap.saved?'· 저장됨':'· 저장 안 함'}`;
+  } else if (snap.cancel_requested) {
+    $('#run-status').innerHTML = '<span class="spinner"></span> 취소 처리 중…';
+  } else if (snap.status==='queued') {
+    $('#run-status').innerHTML = '<span class="spinner"></span> 대기 중' +
+      (snap.queue_position > 1 ? ` (앞에 ${snap.queue_position-1}건)` : ' — 다음 차례입니다');
+  } else {
+    $('#run-status').innerHTML = `<span class="spinner"></span> ${esc(snap.current||'')} 실행 중 (${snap.progress}/${snap.total})`;
+  }
+  if ((snap.limit_notes||[]).length)
+    $('#limit-info').innerHTML = snap.limit_notes.map(n=>`<span class="pill warn">${esc(n)}</span>`).join(' ');
+  if (!done) return setTimeout(() => poll(runId), 500);
+  $('#btn-run').disabled = false; $('#btn-cancel').style.display = 'none';
+  $('#console-hint').textContent = '(실행 종료)';
+  if (snap.error) $('#validation').innerHTML = `<div class="msg err"><b>실행 오류</b><pre class="small">${esc(snap.error)}</pre></div>`;
+  $('#btn-dl-schedule').style.display = snap.saved ? '' : 'none';
+  $('#btn-dl-schedule').onclick = () => location.href = `/api/runs/${runId}/schedule.csv`;
+}
+
+// ---------------------------------------------------------------- results
+const M = r => r.metrics || {};
+// 휴리스틱: 같은 문제를 푼 MIP 대비 (comparison.py). RPD 는 MIP 가 최적일 때만.
+function mipCmp(r){
+  const m = M(r);
+  if (m.comparison_note) return `<span class="muted" title="${esc(m.comparison_note)}">조건 다름</span>`;
+  if (!m.reference_method) return '–';
+  const ref = (state.config.methods.find(x=>x.key===m.reference_method)||{}).short || m.reference_method;
+  const v = m.rpd_pct != null ? `RPD ${m.rpd_pct.toFixed(2)}%`
+          : (m.incumbent_deviation_pct != null ? `편차 ${m.incumbent_deviation_pct.toFixed(2)}%` : '–');
+  const sp = m.wall_speedup != null ? ` · ×${m.wall_speedup >= 10 ? m.wall_speedup.toFixed(0) : m.wall_speedup.toFixed(1)}` : '';
+  const tip = `기준 ${ref} (${m.reference_status||''})` + (m.bound_gap_pct!=null?` · bound 대비 ${m.bound_gap_pct.toFixed(2)}%`:'') +
+              (m.rpd_pct==null && m.incumbent_deviation_pct!=null ? ' · 기준 MIP 가 최적이 아니라 RPD 대신 편차' : '');
+  return `<span title="${esc(tip)}">${v}${sp}<br><span class="muted">vs ${esc(ref)}</span></span>`;
+}
+function actualRowHTML(act){
+  if (!act || act.makespan==null) return '';
+  return `<tr style="background:#f7f8fa"><td><span class="muted">실제 기록 (참고)</span></td><td><span class="pill mute">기록</span></td>
+    <td class="num muted">${fmt(act.makespan)}</td><td class="num muted">${fmt(act.truck_wait_sum)}</td>
+    <td class="num muted">${fmt(act.truck_wait_internal)}</td><td class="num muted">${fmt(act.truck_wait_external)}</td>
+    <td class="num muted">${fmt(act.go_wait_sum)}</td><td colspan="8" class="small muted">${esc(act.note||'')}</td></tr>`;
+}
+function compareTableHTML(rs, act){
+  const ok = rs.filter(r => r.makespan != null);
+  const bestMs = ok.length ? Math.min(...ok.map(r=>r.makespan)) : null;
+  const bestOf = k => { const v = ok.map(r=>M(r)[k]).filter(v=>typeof v==='number'); return v.length ? Math.min(...v) : null; };
+  const bestTw = bestOf('truck_wait_sum'), bestGw = bestOf('go_wait_sum');
+  const B = (r,k,b) => (M(r)[k]===b && ok.length>1) ? 'best' : '';
+  return `<thead><tr>
+      <th>모델</th><th>상태</th><th class="num">makespan</th><th class="num">Σ 트럭 대기</th>
+      <th class="num">내부 DS·LD</th><th class="num">외부 GI·GO</th><th class="num">GO만</th><th class="num">지원 RH</th><th class="num" title="지원 rehandle 시간 중 원래 크레인이 다른 작업을 하던 시간 / 원래 크레인이 rehandle 을 기다린 시간">겹침 / 대기</th><th class="num">MIP 대비</th><th class="num">목적값</th>
+      <th class="num">bound</th><th class="num">gap</th><th class="num">solve(s)</th>
+      <th class="num">vars</th><th class="num">constrs</th></tr></thead><tbody>
+    ${rs.map(r => `<tr>
+      <td><b>${esc(r.label)}</b></td><td>${statusPill(r.status)}</td>
+      <td class="num ${r.makespan===bestMs&&ok.length>1?'best':''}">${fmt(r.makespan)}</td>
+      <td class="num ${B(r,'truck_wait_sum',bestTw)}">${fmt(M(r).truck_wait_sum)}</td>
+      <td class="num">${fmt(M(r).truck_wait_internal)}</td><td class="num">${fmt(M(r).truck_wait_external)}</td>
+      <td class="num ${B(r,'go_wait_sum',bestGw)}">${fmt(M(r).go_wait_sum)}</td>
+      <td class="num">${M(r).n_rehandles!=null ? `${M(r).n_assisted||0} / ${M(r).n_rehandles}` : '–'}</td>
+      <td class="num small">${M(r).n_assisted ? `${fmt(M(r).assist_overlap)} / ${fmt(M(r).assist_home_wait)}` : '–'}</td>
+      <td class="num small">${mipCmp(r)}</td>
+      <td class="num">${fmt(r.objective)}</td><td class="num">${fmt(r.best_bound)}</td>
+      <td class="num">${r.mip_gap==null?'–':(r.mip_gap*100).toFixed(2)+'%'}</td>
+      <td class="num">${fmt(r.solve_time)}</td><td class="num">${fmt(r.num_vars)}</td>
+      <td class="num">${fmt(r.num_constraints)}</td></tr>`).join('')}${actualRowHTML(act)}</tbody>`;
+}
+
+// 롤링 결과와 짝지을 정적(정보를 처음부터 다 아는) 결과
+const ROLL_PAIR = {rolling_coop: 'coop', rolling_window_v2: 'window_rule_v2'};
+function rollingCardsHTML(r, rs){
+  const m = M(r), sched = r.schedule || [];
+  const sgn = v => v==null ? '–' : (v>0?'−':v<0?'+':'')+Math.abs(v).toFixed(1)+'%';
+  const cls = v => v==null ? '' : (v>0.0001?'good':(v<-0.0001?'bad':''));
+  const mins = s => s==null ? '–' : (s/60).toFixed(1) + '분';
+  const H = m.ld_lookahead != null ? +m.ld_lookahead : (m.agv_info_min||0)*60, E = (m.et_info_min||0)*60;
+  const ts = m.replan_times || [], added = m.replan_added || [];
+  // ① 정보 · 투입
+  const mode = m.replan_mode === '일정 간격' ? `${m.replan_interval_min}분 간격` : '새 정보마다';
+  const avgAdd = added.length ? (added.reduce((a,b)=>a+b,0)/added.length).toFixed(1) : '–';
+  // ② AGV 사전 정보로 미리 한 적하 rehandle
+  const preMap = preDone(r), pre = Object.values(preMap), nFull = pre.filter(v => v.full).length;
+  const preByLC = Object.keys(preMap).filter(t => (sched.find(x => x.task===t)||{}).assisted).length;
+  const ldRh = sched.filter(e => e.kind==='RH' && (sched.find(x => x.task===e.parent)||{}).job_type==='LD').length;
+  const lead = pre.length ? pre.reduce((a,v)=>a+v.lead,0)/pre.length : null;
+  // ③ 외부트럭 투입 대기: 트럭이 와도 다음 투입 시점까지 계획에 못 들어간 시간
+  const ets = sched.filter(e => e.kind==='main' && (e.job_type==='GI' || e.job_type==='GO'));
+  const delay = ets.map(e => { const t = ts.find(t => t >= e.ready - E - 1e-6); return t==null ? 0 : Math.max(0, t - e.ready); });
+  const dSum = delay.reduce((a,b)=>a+b,0), dAvg = delay.length ? dSum/delay.length : 0;
+  const ext = m.truck_wait_external || 0;
+  // ④ 정보 손실: 같은 방법의 정적 결과와 비교 (조건이 같을 때만 의미)
+  const pk = ROLL_PAIR[r.method], st = pk && rs.find(x => x.method===pk && x.makespan!=null && !M(x).rolling);
+  const ref = r.method==='rolling_window_v2' ? rs.find(x => x.method==='rolling_nohelp' && x.makespan!=null) : null;
+  let infoBox = '';
+  if (st){
+    const ms = M(st), stH = ms.ld_lookahead == null ? null : +ms.ld_lookahead;
+    const same = stH != null && Math.abs(stH - H) < 1 && ms.rh_after_arrival !== false;
+    const loss = ms.truck_wait_sum ? 100*(m.truck_wait_sum - ms.truck_wait_sum)/ms.truck_wait_sum : null;
+    const gapNote = st.mip_gap != null && st.mip_gap > 0.001 ? ` · 정적 결과 gap ${(st.mip_gap*100).toFixed(0)}% (${esc(st.status)}) → 덜 풀린 해와 비교` : '';
+    infoBox = `<div class="box"><div class="k">정보를 다 아는 정적 ${esc(st.label)} 대비</div>
+      <div class="v ${loss==null?'':(loss>0.0001?'bad':(loss<-0.0001?'good':''))}">${loss==null?'–':(loss>0?'+':loss<0?'−':'')+Math.abs(loss).toFixed(1)+'%'}</div>
+      <div class="sub">트럭 대기 ${fmt(ms.truck_wait_sum)} → ${fmt(m.truck_wait_sum)} · AGV ${fmt(ms.truck_wait_internal)} → ${fmt(m.truck_wait_internal)} · 외부 ${fmt(ms.truck_wait_external)} → ${fmt(m.truck_wait_external)}</div>
+      <div class="sub ${same?'':'warn'}">${same ? `조건 같음 (적하 RH 는 AGV 도착 ${(H/60).toFixed(0)}분 전부터) → + 면 정보를 늦게 알아 잃은 몫`
+        : `⚠ 조건 다름: 정적은 ${stH==null?'AGV 사전 정보 끔 (적하 RH 도 도착 뒤)':`AGV ${(stH/60).toFixed(0)}분 전`}, 롤링은 ${(H/60).toFixed(0)}분 전 → 정보 손실로 해석 불가. 정적에 'AGV 도착 H분 전부터' 를 켜고 같은 H 로 돌리세요`}${gapNote}</div></div>`;
+  } else if (pk) {
+    infoBox = `<div class="box"><div class="k">정보를 다 아는 정적 결과 대비</div><div class="v">–</div>
+      <div class="sub">같은 실행에 정적 '${pk==='coop'?'협업 모델':'Window–Slack ver2'}' 를 'AGV 도착 ${(H/60).toFixed(0)}분 전부터' 옵션으로 함께 돌리면 정보 손실이 나옵니다</div></div>`;
+  }
+  const refBox = ref ? (() => { const g = pct(M(ref).truck_wait_sum, m.truck_wait_sum);
+    return `<div class="box"><div class="k">롤링 · 지원 없음 대비 (지원 효과)</div><div class="v ${cls(g)}">${sgn(g)}</div>
+      <div class="sub">${fmt(M(ref).truck_wait_sum)} → ${fmt(m.truck_wait_sum)} (같은 정보 · 투입 조건)</div></div>`; })() : '';
+  const inner = m.inner_status ? Object.entries(m.inner_status).map(([k,v]) => `${k} ${v}`).join(' · ') : '';
+  return `<div class="impr roll">
+    <div class="box"><div class="k">롤링 · 정보 · 작업 투입</div>
+      <div class="v" style="font-size:15px;margin-top:6px">${esc(mode)} · ${ts.length}번</div>
+      <div class="sub">AGV ${(H/60).toFixed(0)}분 전 · 외부트럭 ${E ? (E/60).toFixed(0)+'분 전' : '도착 시'} 정보 공개 · 투입당 작업 ${avgAdd}개 · 다음 투입 전에 시작하는 작업만 확정</div></div>
+    <div class="box"><div class="k">AGV 도착 전에 시작한 적하 rehandle</div>
+      <div class="v">${pre.length} <span class="sub">/ ${ldRh}</span></div>
+      <div class="sub">${pre.length ? `도착 전 완료 ${nFull} · 평균 ${mins(lead)} 앞서 · 그중 LC 가 대신 ${preByLC}개` : 'AGV 사전 정보로 미리 한 적하 rehandle 없음'}</div></div>
+    <div class="box"><div class="k">외부트럭 투입 대기 (다음 투입까지)</div>
+      <div class="v">${mins(dAvg)}</div>
+      <div class="sub">트럭 ${ets.length}대 합 ${fmt(dSum)} s${ext ? ` = 외부 트럭 대기의 ${(100*dSum/ext).toFixed(0)}%` : ''}${m.replan_mode === '일정 간격' ? '' : ' (새 정보마다 투입이면 0)'}</div></div>
+    ${refBox}${infoBox}
+    <div class="box"><div class="k">재계획 · 실행 보정</div>
+      <div class="v" style="font-size:15px;margin-top:6px">재계획 ${m.replans??'–'}번 · ${fmt(m.inner_time)} s</div>
+      <div class="sub">${inner ? inner + ' · ' : ''}상대 크레인 간섭으로 계획보다 늦춘 작업 ${m.delayed_in_execution??0}개</div></div>
+  </div>`;
+}
+
+function improvementHTML(rs){
+  const base = rs.find(r => r.method==='baseline' && r.makespan!=null);
+  const others = rs.filter(r => r.method!=='baseline' && r.makespan!=null);
+  if (!others.length || (!base && !others.some(r => M(r).rolling))) return '';
+  return others.map(r => {
+    const head = `<div class="impr-h">${esc(r.label)}${M(r).rolling ? ' <span class="tag">롤링</span>' : ''}</div>`;
+    const roll = M(r).rolling ? rollingCardsHTML(r, rs) : '';
+    if (!base) return head + roll;
+    const dm = pct(base.makespan, r.makespan), dt = pct(M(base).truck_wait_sum, M(r).truck_wait_sum);
+    const di = pct(M(base).truck_wait_internal, M(r).truck_wait_internal), de = pct(M(base).truck_wait_external, M(r).truck_wait_external);
+    const cls = v => v==null ? '' : (v>0.0001?'good':(v<-0.0001?'bad':''));
+    const sgn = v => v==null ? '–' : (v>0?'−':v<0?'+':'')+Math.abs(v).toFixed(1)+'%';
+    const scB = (M(base).busy_time_per_crane||{}).SC, scR = (M(r).busy_time_per_crane||{}).SC;
+    const lcB = (M(base).busy_time_per_crane||{}).LC, lcR = (M(r).busy_time_per_crane||{}).LC;
+    return head + `<div class="impr">
+      <div class="box"><div class="k">makespan (비교군 대비)</div>
+        <div class="v ${cls(dm)}">${sgn(dm)}</div>
+        <div class="sub">${fmt(base.makespan)} → ${fmt(r.makespan)}</div></div>
+      <div class="box"><div class="k">Σ 트럭 대기 (전체)</div>
+        <div class="v ${cls(dt)}">${sgn(dt)}</div>
+        <div class="sub">${fmt(M(base).truck_wait_sum)} → ${fmt(M(r).truck_wait_sum)}</div></div>
+      <div class="box"><div class="k">내부 트럭 DS·LD / 외부 트럭 GI·GO</div>
+        <div class="v" style="font-size:16px;margin-top:5px"><span class="${cls(di)}">${sgn(di)}</span> / <span class="${cls(de)}">${sgn(de)}</span></div>
+        <div class="sub">${fmt(M(base).truck_wait_internal)} → ${fmt(M(r).truck_wait_internal)} · ${fmt(M(base).truck_wait_external)} → ${fmt(M(r).truck_wait_external)}</div></div>
+      <div class="box"><div class="k">반대편 크레인이 대신한 rehandle</div>
+        <div class="v">${M(r).n_assisted||0} <span class="sub">/ ${M(r).n_rehandles||0}</span></div>
+        <div class="sub">SC가 ${(M(r).assisted_by||{}).SC||0} · LC가 ${(M(r).assisted_by||{}).LC||0}</div></div>
+      <div class="box"><div class="k">지원 효과 (겹침 / 기다림)</div>
+        <div class="v" style="font-size:15px;margin-top:6px">${M(r).n_assisted ? `${fmt(M(r).assist_overlap)} s / ${fmt(M(r).assist_home_wait)} s` : '–'}</div>
+        <div class="sub">${M(r).n_assisted ? `지원 rehandle ${fmt(M(r).assist_time)} s 중 원래 크레인이 다른 작업 중이던 비율 ${M(r).assist_overlap_rate==null?'–':(M(r).assist_overlap_rate*100).toFixed(0)+'%'} · 기다림 = 원래 크레인이 rehandle 끝나기를 기다린 시간` : '지원한 rehandle 없음'}</div></div>
+      <div class="box"><div class="k">작업 시간 합 (SC / LC)</div>
+        <div class="v" style="font-size:15px;margin-top:6px">${fmt(scB)} → <b>${fmt(scR)}</b> / ${fmt(lcB)} → <b>${fmt(lcR)}</b></div>
+        <div class="sub">rehandle 을 넘겨받은 쪽은 늘고, 넘긴 쪽은 줄어듭니다</div></div>
+    </div>` + roll;
+  }).join('');
+}
+
+function renderResults(results = state.results, logs = state.logs, opts = {}){
+  const rs = results;
+  ['#compare-card','#gantt-card','#detail-card'].forEach(s => $(s).style.display = rs.length?'':'none');
+  if (!rs.length) { $('#figure-card').style.display='none'; return; }
+  $('#compare-obj').textContent = `목적함수: ${OBJ_LABEL[state.objective]||state.objective}`;
+  $('#compare-table').innerHTML = compareTableHTML(rs, opts.actual !== undefined ? opts.actual
+      : (state.runInstance && state.runInstance.meta ? state.runInstance.meta.actual : null));
+  $('#impr-box').innerHTML = improvementHTML(rs);
+  renderFigures($('#figure-card'), $('#figure-tabs'), $('#figure-body'), rs, opts);
+  $('#gantt-body').innerHTML = ganttStack(rs);
+  renderDetail($('#detail-tabs'), $('#detail-body'), rs, logs, opts);
+}
+
+function renderDetail(tabsEl, bodyEl, rs, logs, opts){
+  const idx = Math.min(state.detailTab, rs.length-1);
+  tabsEl.innerHTML = rs.map((r,i)=>`<button class="${i===idx?'active':''}" data-d="${i}">${esc(r.label)}</button>`).join('');
+  bodyEl.innerHTML = detailHTML(rs[idx], logs, opts);
+  tabsEl.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { state.detailTab=+b.dataset.d; renderDetail(tabsEl, bodyEl, rs, logs, opts); });
+  const btn = bodyEl.querySelector('#btn-fetch-log');
+  if (btn) btn.onclick = async () => {
+    bodyEl.querySelector('#log-pre').textContent = await api(`/api/runs/${opts.runId}/log?method=${rs[idx].method}`);
+  };
+}
+
+function detailHTML(r, logs, opts){
+  if (!r) return '';
+  const notes = (r.notes||[]).map(n => `<div class="msg info small">${esc(n)}</div>`).join('');
+  const err = r.error ? `<div class="msg err small"><b>메시지</b><pre class="small" style="white-space:pre-wrap;margin:6px 0 0">${esc(r.error)}</pre></div>` : '';
+  const byTask = {}; (r.schedule||[]).forEach(e => byTask[e.task] = e);
+  const seq = Object.entries(r.crane_sequences||{}).map(([c,ts]) =>
+    `<div class="seqline"><b style="color:${CRANE_COLOR[c]||'inherit'}">${esc(c)}</b> →
+      ${ts.map(t => { const e = byTask[t]||{}; const cls = e.kind==='RH' ? (e.assisted?'tk as':'tk rh') : 'tk';
+        return `<span class="${cls}">${esc(t)}</span>`; }).join(' → ')}</div>`).join('');
+  const rows = (r.schedule||[]).map(e => `<tr>
+      <td>${esc(e.crane)}</td><td class="num">${e.seq}</td><td>${esc(e.task)}</td>
+      <td>${e.kind==='RH' ? (e.assisted ? typeChip('AS') : typeChip('RH')) : typeChip(e.job_type)}</td>
+      <td class="num">${e.o}</td><td class="num">${e.d}</td>
+      <td class="num">${fmt(e.start)}</td><td class="num">${fmt(e.end)}</td><td class="num">${fmt(e.duration)}</td>
+      <td class="num">${e.rh_time?fmt(e.rh_time):''}</td>
+      <td class="num">${e.kind==='main'?fmt(e.ready):''}</td>
+      <td class="num">${e.kind==='main'?fmt(e.truck_out - e.ready):''}</td></tr>`).join('');
+  const log = logs && logs[r.method];
+  const logHTML = log !== undefined
+    ? `<pre class="log" id="log-pre">${esc(log||'(로그 없음)')}</pre>`
+    : (opts.runId ? `<button class="ghost" id="btn-fetch-log">저장된 로그 불러오기</button>
+                     <pre class="log" id="log-pre" style="margin-top:8px">(클릭하여 불러오기)</pre>` : '');
+  return `${notes}${err}
+    ${seq ? `<div style="margin-bottom:10px">${seq}<div class="small muted">보라색 = 반대편 크레인이 대신한 rehandle · 회색 = 원래 크레인의 rehandle</div></div>`:''}
+    ${rows ? `<div style="max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-bottom:10px">
+      <table><thead><tr><th>크레인</th><th>#</th><th>작업</th><th>유형</th><th>o</th><th>d</th>
+      <th>start</th><th>end</th><th>dur</th><th>포함 RH</th><th>트럭 도착</th><th>트럭 대기</th></tr></thead><tbody>${rows}</tbody></table></div>`:''}
+    ${logHTML}`;
+}
+
+// ---- 노트북 원본 차트
+function figureSources(result, opts){
+  const live = (opts.live || state.figures || {})[result.method];
+  if (live && live.length) return live.map(b => 'data:image/png;base64,'+b);
+  const n = (opts.figureCounts||{})[result.method] || 0;
+  return Array.from({length:n}, (_,i) => `/api/runs/${opts.runId}/figure?method=${encodeURIComponent(result.method)}&i=${i}`);
+}
+function renderFigures(card, tabsEl, bodyEl, results, opts){
+  const withFigs = results.filter(r => figureSources(r, opts).length);
+  if (!withFigs.length){ card.style.display='none'; return; }
+  card.style.display = '';
+  const again = () => renderFigures(card, tabsEl, bodyEl, results, opts);
+  const cmp = !!state.figCompare && withFigs.length > 1;
+  const toggle = withFigs.length > 1
+    ? `<button class="ghost small-btn" data-figcmp="1" style="margin:6px 8px 6px auto;align-self:center"
+         title="두 모델의 차트를 옆에 나란히 띄워 비교합니다">${cmp ? '하나씩 보기' : '나란히 비교 (2개)'}</button>` : '';
+  const figs = r => figureSources(r, opts).map(s => `
+    <div class="figwrap"><img src="${s}" alt="notebook figure"></div>
+    <div class="small muted" style="margin:0 0 8px"><a href="${s}" target="_blank">새 창에서 원본 크기로 보기</a></div>`).join('');
+  if (!cmp){
+    const idx = Math.min(state.figureTab, withFigs.length-1);
+    tabsEl.innerHTML = withFigs.map((r,i)=>`<button class="${i===idx?'active':''}" data-f="${i}">${esc(r.label)}</button>`).join('') + toggle;
+    bodyEl.innerHTML = figs(withFigs[idx]);
+    tabsEl.querySelectorAll('[data-f]').forEach(b => b.onclick = () => { state.figureTab=+b.dataset.f; again(); });
+  } else {
+    // 왼쪽 · 오른쪽에 볼 모델 (모델 key 로 기억해서 다시 그려도 유지)
+    const pickIdx = (key, dflt) => { const i = withFigs.findIndex(r => r.method === key); return i >= 0 ? i : Math.min(dflt, withFigs.length-1); };
+    const L = pickIdx(state.figL, 0), R = pickIdx(state.figR, L === 0 ? 1 : 0);
+    tabsEl.innerHTML = `<span class="small muted" style="padding:10px 12px;align-self:center">${state.figStack ? '위 · 아래' : '왼쪽 · 오른쪽'}에 볼 모델을 고르세요</span>
+      <button class="ghost small-btn" data-figstack="1" style="margin:6px 0 6px auto;align-self:center"
+        title="화면이 좁아 그림이 작으면 위아래로 크게 놓고 비교하세요">${state.figStack ? '옆으로 놓기' : '위아래로 놓기'}</button>` + toggle.replace('margin:6px 8px 6px auto', 'margin:6px 8px 6px 6px');
+    bodyEl.innerHTML = `<div class="figcmp${state.figStack ? ' stack' : ''}">${[['L', L], ['R', R]].map(([side, i]) => `
+      <div class="figcol"><select data-figside="${side}" aria-label="${side==='L'?'왼쪽':'오른쪽'} 차트 모델">${withFigs.map((r, j) =>
+        `<option value="${esc(r.method)}"${j===i?' selected':''}>${esc(r.label)}</option>`).join('')}</select>
+        ${figs(withFigs[i])}</div>`).join('')}</div>`;
+    bodyEl.querySelectorAll('[data-figside]').forEach(sel => sel.onchange = () => {
+      state[sel.dataset.figside === 'L' ? 'figL' : 'figR'] = sel.value; again(); });
+    state.figL = withFigs[L].method; state.figR = withFigs[R].method;
+  }
+  const st = tabsEl.querySelector('[data-figstack]');
+  if (st) st.onclick = () => { state.figStack = !state.figStack; again(); };
+  const t = tabsEl.querySelector('[data-figcmp]');
+  if (t) t.onclick = () => { state.figCompare = !cmp; again(); };
+}
+
+// ---- 공통 Gantt (모델별로 쌓아서 같은 시간 축)
+function niceStep(T){
+  const raw = T/10, mag = Math.pow(10, Math.floor(Math.log10(raw||1)));
+  const n = raw/mag;
+  return (n<=1?1:n<=2?2:n<=5?5:10) * mag;
+}
+const PATTERN = `<defs>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <rect width="6" height="6" fill="#ffffff" fill-opacity="0.0"/><line x1="0" y1="0" x2="0" y2="6" stroke="#fff" stroke-width="2.4" stroke-opacity="0.75"/></pattern></defs>`;
+
+function ganttStack(rs){
+  const ok = rs.filter(r => (r.schedule||[]).length);
+  if (!ok.length) return '<div class="empty">표시할 스케줄이 없습니다.</div>';
+  const T = Math.max(...ok.map(r => Math.max(...r.schedule.map(e=>e.end))), 1);
+  const legend = ['DS','LD','GI','GO'].map(t=>`<span><i style="background:${TYPE_COLOR[t]}"></i>${t}</span>`).join('') +
+    `<span><i style="background:${TYPE_COLOR.RH}"></i>rehandle (원래 크레인)</span>
+     <span><i style="background:${TYPE_COLOR.AS}"></i>rehandle (반대편 지원)</span>
+     <span>빗금 = 처리시간 안의 rehandle · ▲ = 트럭 도착</span>
+     <span><i style="background:#fff;border:2.5px solid #d92d20;box-sizing:border-box"></i>지원 크레인 자기 다음 트럭이 이미 와 있는데 한 지원</span>` +
+    (ok.some(r => (M(r).replan_times||[]).length) ? `<span><i style="background:#fff;border-left:2px dashed #7c3aed;box-sizing:border-box"></i>롤링: 작업 투입(재계획) 시점, +n = 새로 들어온 작업 수</span>` : '');
+  const anyPre = ok.some(r => Object.keys(preDone(r)).length);
+  const preLegend = anyPre ? `<span><i style="background:#fff;border:2.5px solid #0e9f6e;box-sizing:border-box"></i>AGV 도착 전에 미리 한 적하 rehandle (점선 테두리 = 도착 뒤까지 이어짐)</span>
+     <span><svg width="46" height="10" style="vertical-align:middle"><line x1="4" y1="5" x2="40" y2="5" stroke="#0e9f6e" stroke-width="2"/><path d="M 4 1 l 4 4 l -4 4 l -4 -4 z" fill="#0e9f6e"/><path d="M 40 9 l -4 -7 l 8 0 z" fill="#0e9f6e"/></svg>"AGV 정보" 띠: 정보 공개(◆, 도착 H분 전) → AGV 도착(▼), 점선 = 미리 한 rehandle 과 그 적하</span>
+     <button class="ghost small-btn prebtn" onclick="this.closest('.gstack').classList.toggle('focus-pre')" title="미리 한 적하 rehandle 과 그 적하 작업만 진하게">사전 수행만 강조</button>` : '';
+  return `<div class="gstack"><div class="legend">${legend}${preLegend}</div>` + ok.map(r => ganttSVG(r, T)).join('') + `</div>`;
+}
+
+// 적하(LD) rehandle 중 AGV 도착(a) 전에 시작한 것 = AGV 도착을 H분 전에 알아서 미리 한 것
+function preDone(result){
+  const sched = result.schedule || [], by = {};
+  sched.forEach(e => { if (e.kind==='main') by[e.task] = e; });
+  const out = {};
+  sched.forEach(e => {
+    const par = by[e.parent];
+    if (e.kind==='RH' && par && par.job_type==='LD' && e.start < par.ready - 1e-6)
+      out[e.task] = {parent: par, a: par.ready, lead: par.ready - e.start, full: e.end <= par.ready + 1e-6};
+  });
+  return out;
+}
+function ganttSVG(result, T){
+  const sched = result.schedule, cranes = ['LC','SC'];
+  const padL = 64, padR = 18, padT = 30, rowH = 44, barH = 24, W = 940, innerW = W-padL-padR;
+  const sx = t => padL + (t/T)*innerW;
+  // 지원 rehandle 중, 그 크레인의 다음 본 작업 트럭이 이미 도착한 뒤에 시작한 것 (자기 트럭을 기다리게 하며 지원)
+  const lateHelp = {};
+  cranes.forEach(c => {
+    const seq = sched.filter(e => e.crane===c).sort((a,b) => a.start-b.start);
+    seq.forEach((e, k) => {
+      if (e.kind!=='RH' || !e.assisted) return;
+      const nxt = seq.slice(k+1).find(x => x.kind==='main');
+      if (nxt && nxt.ready <= e.start + 1e-6) lateHelp[e.task] = nxt;
+    });
+  });
+  const nLate = Object.keys(lateHelp).length;
+  // AGV 사전 정보로 미리 한 적하 rehandle → LC 행과 SC 행 사이에 "AGV 정보" 띠: 적하 작업마다 ◆(정보 공개) ─ ▼(AGV 도착)
+  const pre = preDone(result), preParents = new Set(Object.values(pre).map(v => v.parent.task));
+  const Hs = M(result).ld_lookahead != null ? +M(result).ld_lookahead : (M(result).agv_info_min != null ? M(result).agv_info_min*60 : null);
+  const info = [];                                  // {par, r0, a, lane}
+  [...new Set(Object.values(pre).map(v => v.parent))].sort((p, q) => p.ready - q.ready).forEach(par => {
+    info.push({par, a: par.ready, r0: Hs != null ? Math.max(0, par.ready - Hs) : par.ready});
+  });
+  const laneEnd = [];
+  info.forEach(it => {
+    let k = laneEnd.findIndex(end => sx(it.r0) > end + 6);
+    if (k < 0) { k = laneEnd.length; laneEnd.push(0); }
+    laneEnd[k] = sx(it.a) + 34; it.lane = k;
+  });
+  const laneH = 10, bandH = info.length ? 12 + laneEnd.length*laneH : 0;
+  const rowTop = c => padT + cranes.indexOf(c)*rowH + (c === 'SC' ? bandH : 0);
+  const rowY = c => rowTop(c) + (rowH-barH)/2;
+  const yEnd = padT + cranes.length*rowH + bandH, H = yEnd + 14;
+  const laneY = k => padT + rowH + 8 + k*laneH;
+
+  let g = PATTERN;
+  const step = niceStep(T);
+  for (let t=0; t<=T+1e-9; t+=step)
+    g += `<line x1="${sx(t)}" y1="${padT-4}" x2="${sx(t)}" y2="${yEnd}" stroke="#eceef1"/>
+          <text x="${sx(t)}" y="${padT-8}" font-size="10" fill="#6b7683" text-anchor="middle">${+t.toFixed(2)}</text>`;
+  if (bandH) g += `<rect x="${padL}" y="${padT+rowH+1}" width="${innerW}" height="${bandH-2}" fill="#f1faf6"/>
+      <text x="${padL-10}" y="${padT+rowH+bandH/2+3}" font-size="9.5" fill="#0b7a55" text-anchor="end" font-weight="700">AGV 정보</text>`;
+  // 롤링 호라이즌: 작업 투입(재계획) 시점 = 보라 점선. 위 숫자 = 그때 새로 들어온 작업 수
+  const rt = M(result).replan_times || [], ra = M(result).replan_added || [];
+  rt.forEach((t, k) => {
+    if (t > T + 1e-9) return;
+    const xx = sx(t), few = rt.length <= 40;
+    g += `<g><line x1="${xx}" y1="${padT-2}" x2="${xx}" y2="${yEnd}" stroke="#7c3aed" stroke-opacity="${few?0.55:0.3}" stroke-dasharray="3 3"/>
+      <path d="M ${xx-4} ${padT-2} l 8 0 l -4 6 z" fill="#7c3aed"><title>투입 ${k+1}: ${fmt(t)} · 새 작업 ${ra[k]??'?'}개</title></path>
+      ${few && (ra[k]||0) > 0 ? `<text x="${xx+3}" y="${yEnd+11}" font-size="9" fill="#7c3aed">+${ra[k]}</text>` : ''}</g>`;
+  });
+  cranes.forEach(c => {
+    const y = rowY(c);
+    g += `<text x="${padL-10}" y="${y+barH/2+4}" font-size="12" fill="${CRANE_COLOR[c]}" text-anchor="end" font-weight="700">${c}</text>
+          <line x1="${padL}" y1="${rowTop(c)+rowH}" x2="${W-padR}" y2="${rowTop(c)+rowH}" stroke="#f0f2f4"/>`;
+    sched.filter(e=>e.crane===c).forEach(e => {
+      const x = sx(e.start), w = Math.max(sx(e.end)-sx(e.start), 2);
+      const fill = e.kind==='RH' ? (e.assisted ? TYPE_COLOR.AS : TYPE_COLOR.RH) : (TYPE_COLOR[e.job_type]||'#888');
+      const pv = pre[e.task];
+      const tip = `${e.task}  ${e.o}→${e.d}\nstart ${fmt(e.start)} / end ${fmt(e.end)} / dur ${fmt(e.duration)}` +
+        (e.rh_time?`\n포함 rehandle ${fmt(e.rh_time)}`:'') + (e.assisted?`\n${e.home} 의 rehandle 을 ${e.crane} 가 대신함`:'') +
+        (e.kind==='main'?`\n트럭 도착 ${fmt(e.ready)} → 출발 ${fmt(e.truck_out)} (대기 ${fmt(e.truck_out-e.ready)})`:'') +
+        (lateHelp[e.task]?`\n⚠ ${e.crane} 의 다음 작업 ${lateHelp[e.task].task} 트럭이 ${fmt(lateHelp[e.task].ready)} 에 이미 도착 (이 지원 시작 ${fmt(e.start)}) → 그 트럭을 기다리게 하며 지원`:'') +
+        (pv?`\n✔ AGV(${pv.parent.task}) 도착 ${fmt(pv.a)} 보다 ${(pv.lead/60).toFixed(1)}분 먼저 시작 — ${pv.full?'도착 전에 끝냄':'도착 뒤까지 이어짐'}`
+          + (Hs!=null?` (정보 공개 ${fmt(Math.max(0, pv.a - Hs))})`:''):'');
+      const isPre = !!pv || (e.kind==='main' && preParents.has(e.task)), pc = isPre ? ' pre' : '';
+      g += `<g><rect class="gbar${pc}" x="${x}" y="${y}" width="${w}" height="${barH}" rx="3" fill="${fill}" fill-opacity="0.92"><title>${esc(tip)}</title></rect>`;
+      if (e.kind==='RH' || e.rh_time>0) {
+        const hw = e.kind==='RH' ? w : Math.max(sx(e.start+e.rh_time)-x, 1);
+        g += `<rect class="gov${pc}" x="${x}" y="${y}" width="${hw}" height="${barH}" rx="3" fill="url(#hatch)" pointer-events="none"/>`;
+      }
+      if (lateHelp[e.task]) g += `<rect class="gov${pc}" x="${x-2}" y="${y-2}" width="${w+4}" height="${barH+4}" rx="4" fill="none" stroke="#d92d20" stroke-width="2.5" pointer-events="none"/>`;
+      else if (e.assisted && !pv) g += `<rect class="gov" x="${x-1}" y="${y-1}" width="${w+2}" height="${barH+2}" rx="4" fill="none" stroke="${TYPE_COLOR.AS}" stroke-width="1.5"/>`;
+      if (pv) g += `<rect class="gov pre" x="${x+1}" y="${y+1}" width="${Math.max(w-2,1)}" height="${barH-2}" rx="3" fill="none" stroke="#0e9f6e" stroke-width="2.5"${pv.full?'':' stroke-dasharray="4 2"'} pointer-events="none"/>`;
+      if (w > 36) g += `<text class="gov${pc}" x="${x+w/2}" y="${y+barH/2+4}" font-size="10" fill="#fff" text-anchor="middle" pointer-events="none">${esc(e.kind==='RH'?e.task.replace(/^.*_(r\d+)$/,'$1'):e.task)}</text>`;
+      g += `</g>`;
+      if (e.kind==='main' && e.ready>0)
+        g += `<path class="gtri${pc}" d="M ${sx(e.ready)} ${y+barH+2} l -4 7 l 8 0 z" fill="${TYPE_COLOR[e.job_type]||'#888'}"><title>${esc(e.task)} 트럭 도착 ${fmt(e.ready)}</title></path>`;
+    });
+  });
+  // AGV 정보 띠: ◆ 정보 공개 ─ ▼ AGV 도착, ▼ 에서 해측 적하 막대까지 세로 점선, 미리 한 rehandle 끝 → ▼ 연결 점선
+  info.forEach(it => {
+    const ly = laneY(it.lane), xr = sx(it.r0), xa = sx(it.a), ySC = rowY('SC');
+    g += `<g class="gtri pre">
+      <line x1="${xr}" y1="${ly}" x2="${xa}" y2="${ly}" stroke="#0e9f6e" stroke-width="1.8"/>
+      ${Hs != null ? `<path d="M ${xr} ${ly-4} l 4 4 l -4 4 l -4 -4 z" fill="#0e9f6e"><title>${esc(it.par.task)} AGV 정보 공개 ${fmt(it.r0)} (도착 ${(Hs/60).toFixed(0)}분 전)</title></path>` : ''}
+      <path d="M ${xa} ${ly+4} l -4 -7 l 8 0 z" fill="#0e9f6e"><title>${esc(it.par.task)} AGV 도착 ${fmt(it.a)}</title></path>
+      <path d="M ${xa} ${ly+4} C ${xa} ${(ly+ySC)/2}, ${sx(it.par.start)} ${(ly+ySC)/2}, ${sx(it.par.start)} ${ySC}" fill="none" stroke="#0e9f6e" stroke-width="1" stroke-dasharray="2 2"><title>${esc(it.par.task)} AGV 도착 ${fmt(it.a)} → 해측 적하 시작 ${fmt(it.par.start)}</title></path>
+      <text x="${xa+5}" y="${ly+3}" font-size="8.5" fill="#0b7a55">${esc(it.par.task)}</text></g>`;
+  });
+  Object.entries(pre).forEach(([tid, v]) => {
+    const it = info.find(q => q.par === v.parent), e = sched.find(x => x.task === tid);
+    const x1 = sx(e.end), y1 = rowY(e.crane) + (e.crane === 'LC' ? barH : 0), x2 = sx(v.a), y2 = laneY(it.lane);
+    g += `<path class="gtri pre" d="M ${x1} ${y1} C ${x1} ${(y1+y2)/2}, ${x2} ${(y1+y2)/2}, ${x2} ${y2}" fill="none" stroke="#0e9f6e" stroke-width="1.2" stroke-dasharray="3 2" pointer-events="none"/>`;
+  });
+  const preList = Object.values(pre), nPre = preList.length, nFull = preList.filter(v => v.full).length;
+  const nLdRh = sched.filter(e => e.kind==='RH' && (sched.find(x => x.task===e.parent)||{}).job_type==='LD').length;
+  return `<div class="flexwrap small" style="margin:6px 0 0"><b>${esc(result.label)}</b>
+      <span class="muted">makespan <b>${fmt(result.makespan)}</b> · Σ 트럭 대기 <b>${fmt(M(result).truck_wait_sum)}</b>
+      (내부 ${fmt(M(result).truck_wait_internal)} · 외부 ${fmt(M(result).truck_wait_external)})
+      ${M(result).n_rehandles?` · 지원 RH ${M(result).n_assisted||0}/${M(result).n_rehandles}`:''}
+      ${nLdRh?` · <span style="color:#0b7a55" title="AGV 도착 전에 시작한 적하 rehandle (AGV 정보를 미리 알아서 가능)">AGV 도착 전 적하 RH <b>${nPre}</b>/${nLdRh}${nPre?` (도착 전 완료 ${nFull}, 평균 ${(preList.reduce((a,v)=>a+v.lead,0)/nPre/60).toFixed(1)}분 앞서)`:''}</span>`:''}
+      ${(M(result).replan_times||[]).length?` · <span style="color:#7c3aed">투입 ${M(result).replan_times.length}번 (${esc(M(result).replan_mode||'')}${M(result).replan_interval_min?` ${M(result).replan_interval_min}분`:''}, AGV ${M(result).agv_info_min??'–'}분 전)</span>`:''}
+      ${M(result).n_assisted?` · <span style="color:#d92d20" title="지원 크레인의 다음 트럭이 이미 와 있는데 시작한 지원 rehandle">자기 트럭 기다리게 한 지원 <b>${nLate}</b></span>`:''}</span></div>
+    <div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" width="100%" style="min-width:620px;display:block">${g}</svg></div>`;
+}
+
+// ---------------------------------------------------------------- saved runs
+async function loadRuns(){ showRunList(); state.runs = (await api('/api/runs')).runs; renderRunList(); }
+function resultChips(summary){
+  const ok = (summary||[]).filter(s=>s.makespan!=null);
+  const best = ok.length ? Math.min(...ok.map(s=>s.makespan)) : null;
+  const base = (summary||[]).find(s=>s.method==='baseline');
+  return (summary||[]).map(s => {
+    const d = (base && s.method!=='baseline') ? pct(base.truck_wait, s.truck_wait) : null;
+    return `<span class="resultchip${s.makespan===best&&ok.length>1?' best-chip':''}">
+      ${esc(s.label||s.method)} ${statusPill(s.status)}
+      <span>ms <b>${fmt(s.makespan)}</b></span><span>트럭대기 <b>${fmt(s.truck_wait)}</b></span>
+      ${d!=null?`<span class="${d>0?'best':''}">(${d>0?'−':'+'}${Math.abs(d).toFixed(1)}%)</span>`:''}</span>`;
+  }).join('');
+}
+function renderRunList(){
+  const q = ($('#run-search').value||'').trim().toLowerCase();
+  const runs = (state.runs||[]).filter(r => !q || [r.label, r.owner, r.instance_name, r.run_id].some(v => String(v||'').toLowerCase().includes(q)));
+  $('#run-count').textContent = `(${runs.length}${q?` / ${(state.runs||[]).length}`:''})`;
+  $('#run-list').innerHTML = runs.length ? runs.map(r => `
+    <div class="runitem" data-run="${esc(r.run_id)}">
+      <div class="flexwrap"><span class="t">${esc(r.label||r.run_id)}</span>
+        ${r.owner?`<span class="tag">${esc(r.owner)}</span>`:''}
+        ${r.objective?`<span class="tag">${esc(OBJ_LABEL[r.objective]||r.objective)}</span>`:''}
+        <button class="ghost danger" data-delrun="${esc(r.run_id)}" style="margin-left:auto">삭제</button></div>
+      <div class="muted small" style="margin-top:3px">${stamp(r.created_at)} · 인스턴스 <b>${esc(r.instance_name||r.instance_id||'—')}</b>
+        · ${r.num_jobs}작업 · RH ${r.num_rehandles}</div>
+      <div class="flexwrap" style="margin-top:7px">${resultChips(r.summary)}</div>
+    </div>`).join('') : '<div class="empty">저장된 결과가 없습니다.</div>';
+  $$('[data-run]').forEach(el => el.onclick = e => { if (e.target.dataset.delrun) return; openRun(el.dataset.run); });
+  $$('[data-delrun]').forEach(el => el.onclick = async e => {
+    e.stopPropagation();
+    if (!confirm('이 실행 결과를 삭제할까요?')) return;
+    await fetch('/api/runs/'+el.dataset.delrun, {method:'DELETE'}); loadRuns();
+  });
+}
+$('#run-search').oninput = renderRunList;
+function showRunList(){ $('#run-list-view').style.display=''; $('#run-detail-view').style.display='none'; $('#run-detail-view').innerHTML=''; }
+
+async function openRun(runId){
+  const {run} = await api('/api/runs/'+runId);
+  const rs = run.results||[];
+  $('#run-list-view').style.display = 'none';
+  const host = $('#run-detail-view'); host.style.display = ''; window.scrollTo(0,0);
+  host.innerHTML = `
+    <div class="detailbar">
+      <button class="ghost" id="btn-back-runs">← 결과 보관함</button>
+      <span class="detailtitle" id="run-title">${esc(run.label||runId)}</span>
+      <button class="ghost" id="btn-rename-run">이름 수정</button>
+      ${run.cancelled?'<span class="pill warn">취소된 실행</span>':''}
+    </div>
+    <div class="card"><h2>요약 <span class="muted small">목적함수: ${esc(OBJ_LABEL[run.objective]||run.objective||'')}</span>
+      <span class="right">
+        <button class="ghost" onclick="location.href='/api/runs/${runId}/schedule.csv'">스케줄 CSV</button>
+        <button class="ghost" id="btn-load-inst">이 인스턴스로 편집</button>
+      </span></h2>
+      <div class="body small muted">${stamp(run.created_at)} · ${run.owner?`실행자 <b>${esc(run.owner)}</b> · `:''}인스턴스
+        <b>${esc(run.instance_name||run.instance_id||'')}</b> · ${run.num_jobs}작업 · RH ${run.num_rehandles} · run_id <code>${esc(runId)}</code></div>
+      <div style="overflow-x:auto;padding:0 0 6px"><table>${compareTableHTML(rs, ((run.instance||{}).meta||{}).actual)}</table></div>
+      ${improvementHTML(rs)}
+    </div>
+    <div class="card"><h2>스케줄 비교 (공통 Gantt)</h2><div class="body">${ganttStack(rs)}</div></div>
+    <div class="card" data-role="figure-card" style="display:none"><h2>노트북 원본 차트</h2>
+      <div class="tabs" data-role="figure-tabs"></div><div class="body" data-role="figure-body"></div></div>
+    <div class="card"><h2>상세 / 로그</h2><div class="tabs" data-role="detail-tabs"></div><div class="body" data-role="detail-body"></div></div>`;
+  state.detailTab = 0; state.figureTab = 0;
+  const {figures: figureCounts} = await api(`/api/runs/${runId}/figures`);
+  const opts = {runId, figureCounts, live:{}};
+  const q = r => host.querySelector(`[data-role=${r}]`);
+  renderFigures(q('figure-card'), q('figure-tabs'), q('figure-body'), rs, opts);
+  renderDetail(q('detail-tabs'), q('detail-body'), rs, {}, opts);
+  $('#btn-load-inst').onclick = () => { state.instance = deep(run.instance); renderInstance(); goTab('run'); };
+  $('#btn-back-runs').onclick = showRunList;
+  $('#btn-rename-run').onclick = async () => {
+    const cur = run.label || runId, next = prompt('실험 이름', cur);
+    if (next===null || !next.trim() || next===cur) return;
+    const res = await post(`/api/runs/${runId}/rename`, {label:next.trim()});
+    if (res.error) { alert(res.error); return; }
+    run.label = res.label; $('#run-title').textContent = res.label; state.runs = null;
+  };
+}
+$('#btn-refresh-runs').onclick = loadRuns;
+$('#btn-dl-all').onclick = () => location.href = '/api/runs.csv';
+
+// ---------------------------------------------------------------- instances
+async function loadInstances(){ showInstList(); state.instances = (await api('/api/instances')).instances; renderInstList(); }
+function renderInstList(){
+  const q = ($('#inst-search').value||'').trim().toLowerCase();
+  const list = (state.instances||[]).filter(i => !q || [i.name, i.id, i.note].some(v => String(v||'').toLowerCase().includes(q)));
+  $('#inst-count').textContent = `(${list.length}${q?` / ${(state.instances||[]).length}`:''})`;
+  $('#instance-list').innerHTML = list.length ? list.map(i => `
+    <div class="runitem" data-inst="${esc(i.id)}">
+      <div class="flexwrap"><span class="t">${esc(i.name||i.id)}</span>
+        ${i.run_count ? `<span class="tag">실행 ${i.run_count}회</span>` : '<span class="tag" style="background:#fdf3e0;color:#7a5410">실행 기록 없음</span>'}
+        <button class="ghost danger" data-delinst="${esc(i.id)}" style="margin-left:auto">삭제</button></div>
+      <div class="muted small" style="margin-top:3px">${i.num_jobs}작업 (SC ${i.num_sc} · LC ${i.num_lc}) · RH ${i.num_rehandles} · 야드 ${i.n_bay} bay · ${stamp(i.created_at)}</div>
+      ${i.note?`<div class="small muted" style="margin-top:4px">${esc(i.note)}</div>`:''}
+    </div>`).join('') : '<div class="empty">저장된 인스턴스가 없습니다. 실행할 때 “인스턴스 저장”을 켜거나 무작위 생성을 2개 이상 하세요.</div>';
+  $$('[data-inst]').forEach(el => el.onclick = e => { if (e.target.dataset.delinst) return; openInstance(el.dataset.inst); });
+  $$('[data-delinst]').forEach(el => el.onclick = async e => {
+    e.stopPropagation();
+    if (!confirm('삭제할까요? 이 인스턴스로 돌린 실행 결과는 그대로 남습니다.')) return;
+    await fetch('/api/instances/'+el.dataset.delinst, {method:'DELETE'}); loadInstances();
+  });
+}
+$('#inst-search').oninput = renderInstList;
+function showInstList(){ $('#inst-list-view').style.display=''; $('#inst-detail-view').style.display='none'; $('#inst-detail-view').innerHTML=''; }
+
+async function openInstance(instId){
+  const [{instance}, {runs}] = await Promise.all([api('/api/instances/'+instId), api(`/api/instances/${instId}/runs`)]);
+  $('#inst-list-view').style.display = 'none';
+  const host = $('#inst-detail-view'); host.style.display = ''; window.scrollTo(0,0);
+  const p = instance.params;
+  const line = seq => seq.map(j => `<span class="tk">${esc(j.id)} @${j.bay}${j.r_c?` · RH${j.r_c}`:''}</span>`).join(' → ') || '<span class="muted">없음</span>';
+  host.innerHTML = `
+    <div class="detailbar">
+      <button class="ghost" id="btn-back-inst">← 인스턴스</button>
+      <span class="detailtitle" id="inst-title">${esc(instance.name||instance.id)}</span>
+      <button class="ghost" id="btn-rename-inst">이름 수정</button>
+      <button class="btn" id="btn-use-inst" style="margin-left:auto">이 인스턴스로 실행</button>
+    </div>
+    <div class="card"><h2>구성</h2><div class="body">
+      <div class="derived">
+        <div><span class="k">야드</span> ${instance.block.n_bay} bay (해측 TP 0 · 육측 TP ${instance.block.n_bay+1})</div>
+        <div><span class="k">파라미터</span> t̂=${p.t_hat} · 안전여유 ${p.safety_margin} (안전거리 ${p.safety_margin+1} bay) · pick/drop ${p.pick}/${p.drop} · ρ=${p.rh_inplace}</div>
+        ${instance.note?`<div><span class="k">메모</span> ${esc(instance.note)}</div>`:''}
+        <div><span class="k">id</span> <code>${esc(instance.id)}</code></div>
+      </div>
+      <div class="seqline" style="margin-top:10px"><b style="color:var(--sc)">SC</b> → ${line(instance.seq_sc)}</div>
+      <div class="seqline"><b style="color:var(--lc)">LC</b> → ${line(instance.seq_lc)}</div>
+    </div></div>
+    <div class="card"><h2>이 인스턴스의 실행 기록 <span class="muted small">${runs.length}건</span></h2><div class="body" id="inst-runs"></div></div>`;
+  $('#btn-back-inst').onclick = showInstList;
+  $('#btn-use-inst').onclick = () => { state.instance = instance; renderInstance(); goTab('run'); };
+  $('#btn-rename-inst').onclick = async () => {
+    const cur = instance.name || instance.id, next = prompt('인스턴스 이름', cur);
+    if (next===null || !next.trim() || next===cur) return;
+    const res = await post(`/api/instances/${instId}/rename`, {name:next.trim()});
+    if (res.error) { alert(res.error); return; }
+    instance.name = res.name; $('#inst-title').textContent = res.name; state.instances = null;
+  };
+  $('#inst-runs').innerHTML = runs.length ? runs.map(r => `
+    <div class="runitem" data-irun="${esc(r.run_id)}">
+      <div class="flexwrap"><span class="t">${esc(r.label||r.run_id)}</span>
+        ${r.owner?`<span class="tag">${esc(r.owner)}</span>`:''}
+        <span class="muted small" style="margin-left:auto">${stamp(r.created_at)}</span></div>
+      <div class="flexwrap" style="margin-top:7px">${resultChips(r.summary)}</div></div>`).join('')
+    : '<div class="empty">아직 이 인스턴스로 실행한 기록이 없습니다.</div>';
+  $$('[data-irun]').forEach(el => el.onclick = () => { goTab('results'); setTimeout(() => openRun(el.dataset.irun), 60); });
+}
+$('#btn-refresh-inst').onclick = loadInstances;
+
+// ---------------------------------------------------------------- paper table
+const TBL = {rows:[], methods:[], cols:new Set(), pick:[], exports:{}};
+const PICK_KEY = 'rw_table_pick';
+const METRIC_DEFS = {
+  makespan: {head:'Makespan', tex:'$C_{\\max}$', w:'right', best:true},
+  truck_wait:{head:'Truck wait', tex:'Truck wait', w:'right', best:true},
+  tw_int:   {head:'Int. wait', tex:'Int.\\ wait',   w:'right', best:true},
+  tw_ext:   {head:'Ext. wait', tex:'Ext.\\ wait',   w:'right', best:true},
+  go_wait:  {head:'GO wait',  tex:'GO wait',      w:'right', best:true},
+  impr_tw:  {head:'Δwait (%)',tex:'$\\Delta$wait (\\%)', w:'right'},
+  impr_ms:  {head:'Δms (%)',  tex:'$\\Delta C_{\\max}$ (\\%)', w:'right'},
+  impr_gw:  {head:'ΔGO (%)',  tex:'$\\Delta$GO (\\%)', w:'right'},
+  assist:   {head:'Assist',   tex:'Assist',       w:'right'},
+  dev:      {head:'vs MIP (%)', tex:'vs MIP (\\%)', w:'right'},
+  gap:      {head:'Gap (%)',  tex:'Gap (\\%)',    w:'right'},
+  time:     {head:'Time (s)', tex:'Time (s)',     w:'right'},
+  status:   {head:'Status',   tex:'Status',       w:'left'},
+};
+const activeMetrics = () => $$('.tbl-metric').filter(c => c.checked).map(c => c.value);
+const activeMethods = () => TBL.methods.filter(m => TBL.cols.has(m.key));
+
+async function loadTable(){
+  const d = await api('/api/table');
+  TBL.rows = d.rows||[]; TBL.methods = d.methods||[];
+  if (!TBL.cols.size) TBL.methods.forEach(m => TBL.cols.add(m.key));
+  Array.from(TBL.cols).forEach(k => { if (!TBL.methods.some(m => m.key===k)) TBL.cols.delete(k); });
+  $('#tbl-methods').innerHTML = TBL.methods.map(m =>
+    `<label class="chk"><input type="checkbox" class="tbl-m" value="${esc(m.key)}"${TBL.cols.has(m.key)?' checked':''}> ${esc(m.label)}</label>`).join('')
+    || '<span class="muted small">저장된 결과가 없습니다.</span>';
+  $$('.tbl-m').forEach(c => c.onchange = () => { c.checked ? TBL.cols.add(c.value) : TBL.cols.delete(c.value); renderTable(); });
+  restorePick(); renderPicker(); renderTable();
+}
+const liveIds = () => new Set(TBL.rows.map(r => r.run_id));
+function restorePick(){
+  const live = liveIds(); let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(PICK_KEY) || 'null'); } catch(e){}
+  TBL.pick = Array.isArray(saved) ? saved.filter(x => live.has(x)) : [];
+  if (!TBL.pick.length) TBL.pick = TBL.rows.map(r => r.run_id);
+}
+function savePick(){ try { localStorage.setItem(PICK_KEY, JSON.stringify(TBL.pick)); } catch(e){} }
+function setPick(list){ TBL.pick = list.slice(); savePick(); renderPicker(); renderTable(); }
+function togglePick(id, on){
+  const i = TBL.pick.indexOf(id);
+  if (on && i<0) TBL.pick.push(id);
+  if (!on && i>=0) TBL.pick.splice(i,1);
+  savePick(); renderPickCount(); renderTable();
+}
+function visibleRuns(){
+  const q = ($('#tbl-pick-search').value||'').trim().toLowerCase();
+  return q ? TBL.rows.filter(r => [r.label, r.instance_name, r.owner, r.instance_id].some(v => String(v||'').toLowerCase().includes(q))) : TBL.rows;
+}
+function renderPickCount(){ $('#tbl-pick-count').textContent = `${TBL.pick.length} / ${TBL.rows.length} 선택됨`; }
+const methodLabel = k => (TBL.methods.find(m => m.key===k) || {}).label || k;
+function renderPicker(){
+  const rows = visibleRuns(), chosen = new Set(TBL.pick), box = $('#tbl-pick-list');
+  if (!TBL.rows.length) { box.innerHTML = '<div class="muted small" style="padding:14px">저장된 실행 결과가 없습니다.</div>'; renderPickCount(); return; }
+  if (!rows.length) { box.innerHTML = '<div class="muted small" style="padding:14px">검색 결과가 없습니다.</div>'; renderPickCount(); return; }
+  box.innerHTML = rows.map(r => {
+    const done = Object.entries(r.methods).map(([k,v]) => `<span class="mchip${v.optimal?' opt':''}">${esc(methodLabel(k).split(' ')[0])} ${fmt(v.makespan)}/${fmt(v.truck_wait)}</span>`).join('');
+    return `<label class="pickrow${chosen.has(r.run_id)?' on':''}">
+      <input type="checkbox" class="pick-cb" value="${esc(r.run_id)}"${chosen.has(r.run_id)?' checked':''}>
+      <span class="pk-name" title="${esc(r.label)}">${esc(r.label)}</span>
+      <span class="pk-inst muted" title="${esc(r.instance_name)}">${esc(r.instance_name)}</span>
+      <span class="pk-n muted">n=${r.n_jobs} · RH ${r.n_rh}</span>
+      <span class="pk-m">${done}</span>
+      <span class="pk-when muted">${esc(stamp(r.created_at))}</span></label>`;
+  }).join('');
+  $$('.pick-cb').forEach(cb => cb.onchange = () => { cb.closest('.pickrow').classList.toggle('on', cb.checked); togglePick(cb.value, cb.checked); });
+  renderPickCount();
+}
+function rowLabel(r){
+  const mode = $('#tbl-rowlabel').value || 'instance', inst = r.instance_name || r.label;
+  if (mode==='run') return r.label || inst;
+  if (mode==='both') return (r.label && r.label!==inst) ? `${inst} (${r.label})` : inst;
+  return inst;
+}
+function tableRows(){
+  const chosen = new Set(TBL.pick), rows = TBL.rows.filter(r => chosen.has(r.run_id));
+  const mode = $('#tbl-sort').value || 'n';
+  if (mode==='pick') { const o = new Map(TBL.pick.map((id,i)=>[id,i])); rows.sort((a,b)=>o.get(a.run_id)-o.get(b.run_id)); }
+  else if (mode==='name') rows.sort((a,b)=>rowLabel(a).localeCompare(rowLabel(b),'ko'));
+  else if (mode==='time') rows.sort((a,b)=>a.created_at-b.created_at);
+  else rows.sort((a,b)=>a.n_jobs-b.n_jobs || a.created_at-b.created_at);
+  return rows;
+}
+function cellValue(row, key, metric){
+  const c = row.methods[key]; if (!c) return null;
+  if (metric==='gap') return typeof c.gap==='number' ? c.gap*100 : null;
+  if (metric==='status') return c.status || null;
+  if (metric.startsWith('impr_')) {
+    if (key==='baseline') return null;
+    const b = row.methods.baseline; if (!b) return null;
+    const f = {impr_ms:'makespan', impr_tw:'truck_wait', impr_gw:'go_wait'}[metric];
+    return pct(b[f], c[f]);
+  }
+  if (metric==='assist') return (c.n_rh!=null && key!=='baseline') ? c.assist : null;
+  if (metric==='dev') return c.rpd != null ? c.rpd : (c.dev != null ? c.dev : null);
+  return c[metric] ?? null;
+}
+function bestOf(row, methods, metric){
+  let best = null;
+  methods.forEach(m => { const v = cellValue(row, m.key, metric); if (typeof v==='number' && (best===null || v<best-1e-9)) best = v; });
+  return best;
+}
+function cellText(row, key, metric, methods){
+  const v = cellValue(row, key, metric);
+  if (v===null || v===undefined) return {text:'–', bold:false};
+  if (metric==='status') return {text:String(v), bold:false};
+  if (metric==='assist') return {text:`${v}/${row.methods[key].n_rh}`, bold:false};
+  const fixed = ['time','gap','dev'].includes(metric) || metric.startsWith('impr_');
+  let text = (!fixed && Number.isInteger(v)) ? String(v) : v.toFixed(metric==='time'?2:1);
+  let bold = false;
+  if (METRIC_DEFS[metric].best && methods.length > 1) {
+    const b = bestOf(row, methods, metric);
+    bold = b!==null && Math.abs(v-b) < 1e-9;
+  }
+  const c = row.methods[key];
+  if (c.optimal && c.objective_name===metric) text += '*';
+  return {text, bold};
+}
+function summaryRow(rows, methods, metrics){
+  const out = {};
+  methods.forEach(m => { out[m.key] = {}; metrics.forEach(k => {
+    if (k==='status'||k==='assist') { out[m.key][k] = null; return; }
+    const vals = rows.map(r => cellValue(r, m.key, k)).filter(v => typeof v==='number');
+    out[m.key][k] = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+  }); });
+  return out;
+}
+function renderTable(){
+  const methods = activeMethods(), metrics = activeMetrics(), rows = tableRows(), t = $('#paper-table');
+  if (!rows.length || !methods.length || !metrics.length) {
+    const why = !TBL.rows.length ? '저장된 실행 결과가 없습니다.' : !rows.length ? '위에서 표에 넣을 실험을 하나 이상 선택하세요.'
+              : !methods.length ? '표에 넣을 모델을 하나 이상 선택하세요.' : '표시할 지표를 하나 이상 선택하세요.';
+    t.innerHTML = `<tbody><tr><td class="muted small" style="padding:18px">${why}</td></tr></tbody>`;
+    TBL.exports = {}; $('#tbl-tex-out').textContent = ''; return;
+  }
+  const span = metrics.length;
+  let h1 = '<tr><th colspan="4" class="lead"></th>' + methods.map(m=>`<th colspan="${span}" class="grp">${esc(m.label)}</th>`).join('') + '</tr>';
+  let h2 = '<tr><th class="lead">Instance</th><th class="num">n</th><th class="num">RH</th><th class="num">Bays</th>' +
+    methods.map(()=>metrics.map(k=>`<th class="${METRIC_DEFS[k].w==='right'?'num':''}">${esc(METRIC_DEFS[k].head)}</th>`).join('')).join('') + '</tr>';
+  let body = rows.map(r => `<tr><td class="lead" title="${esc(r.label)}">${esc(rowLabel(r))}</td>
+      <td class="num">${r.n_jobs}</td><td class="num">${r.n_rh}</td><td class="num">${r.n_bay}</td>` +
+    methods.map(m => metrics.map(k => { const {text,bold} = cellText(r, m.key, k, methods);
+      return `<td class="${METRIC_DEFS[k].w==='right'?'num':''}">${bold?'<b>':''}${esc(text)}${bold?'</b>':''}</td>`; }).join('')).join('') + '</tr>').join('');
+  let foot = '';
+  if ($('#tbl-summary').checked) {
+    const s = summaryRow(rows, methods, metrics);
+    foot = `<tr><td class="lead">평균 (n=${rows.length})</td><td></td><td></td><td></td>` +
+      methods.map(m => metrics.map(k => { const v = s[m.key][k];
+        return `<td class="${METRIC_DEFS[k].w==='right'?'num':''}">${typeof v==='number'?v.toFixed(k==='time'?2:1):'–'}</td>`; }).join('')).join('') + '</tr>';
+  }
+  t.innerHTML = `<thead>${h1}${h2}</thead><tbody>${body}</tbody>` + (foot?`<tfoot>${foot}</tfoot>`:'');
+  TBL.exports = buildExports(rows, methods, metrics);
+  $('#tbl-tex-out').textContent = TBL.exports.tex;
+}
+function buildExports(rows, methods, metrics){
+  const head = ['Instance','n','RH','Bays'];
+  methods.forEach(m => metrics.forEach(k => head.push(`${m.label} ${METRIC_DEFS[k].head}`)));
+  const data = rows.map(r => { const l = [rowLabel(r), r.n_jobs, r.n_rh, r.n_bay];
+    methods.forEach(m => metrics.forEach(k => l.push(cellText(r, m.key, k, methods).text))); return l; });
+  const q = v => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const csv = [head, ...data].map(r => r.map(q).join(',')).join('\n');
+  const md = ['| '+head.join(' | ')+' |', '|'+head.map(()=>'---').join('|')+'|', ...data.map(r => '| '+r.join(' | ')+' |')].join('\n');
+  const texEsc = s => String(s ?? '').replace(/([&%$#_{}])/g,'\\$1').replace(/–/g,'--').replace(/\*/g,'$^{*}$');
+  const align = 'lrrr' + methods.map(()=>metrics.map(k=>METRIC_DEFS[k].w==='right'?'r':'l').join('')).join('');
+  const span = metrics.length;
+  const texLabel = m => m.key==='baseline' ? 'Baseline' : (m.key==='coop' ? 'Cooperative' : m.key);
+  let grp = ' & & & '; const cmid = []; let col = 5;
+  methods.forEach((m,i) => { grp += (i?' & ':'') + `\\multicolumn{${span}}{c}{${texLabel(m)}}`; cmid.push(`\\cmidrule(lr){${col}-${col+span-1}}`); col += span; });
+  grp += ' \\\\';
+  const sub = ['Instance','$n$','RH','Bays'].concat(methods.flatMap(()=>metrics.map(k=>METRIC_DEFS[k].tex))).join(' & ') + ' \\\\';
+  const bodyTex = rows.map(r => { const c = [texEsc(rowLabel(r)), r.n_jobs, r.n_rh, r.n_bay];
+    methods.forEach(m => metrics.forEach(k => { const {text,bold} = cellText(r, m.key, k, methods);
+      c.push(bold ? `\\textbf{${texEsc(text)}}` : texEsc(text)); }));
+    return '  ' + c.join(' & ') + ' \\\\'; }).join('\n');
+  let sumTex = '';
+  if ($('#tbl-summary').checked) {
+    const s = summaryRow(rows, methods, metrics), c = [`Average ($N=${rows.length}$)`, '', '', ''];
+    methods.forEach(m => metrics.forEach(k => { const v = s[m.key][k]; c.push(typeof v==='number' ? v.toFixed(k==='time'?2:1) : '--'); }));
+    sumTex = '\n  \\midrule\n  ' + c.join(' & ') + ' \\\\';
+  }
+  const tex = ['\\begin{table}[t]','\\centering','\\caption{Baseline vs.\\ cooperative rehandling under predetermined sequences}',
+    '\\label{tab:rehandle-coop}','\\small',`\\begin{tabular}{${align}}`,'\\toprule',grp,cmid.join(' '),sub,'\\midrule',
+    bodyTex + sumTex,'\\bottomrule','\\end{tabular}','\\par\\smallskip',
+    '\\footnotesize Bold: best value per instance; $^{*}$: proven optimal for the objective used. '
+      + '$\\Delta$: reduction relative to the baseline of the same run.','\\end{table}'].join('\n');
+  return {csv, md, tex};
+}
+function copyText(txt, label){
+  const done = () => { $('#tbl-copy-msg').textContent = `${label} 복사됨`; setTimeout(()=>$('#tbl-copy-msg').textContent='', 2000); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => fallback(txt, done));
+  else fallback(txt, done);
+}
+function fallback(txt, done){
+  const ta = document.createElement('textarea'); ta.value = txt; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch(e){} document.body.removeChild(ta);
+}
+$('#btn-refresh-table').onclick = loadTable;
+$$('.tbl-metric').forEach(c => c.onchange = renderTable);
+['#tbl-summary','#tbl-sort','#tbl-rowlabel'].forEach(s => $(s).onchange = renderTable);
+$('#tbl-pick-search').oninput = renderPicker;
+$('#btn-pick-all').onclick = () => setPick(TBL.pick.concat(visibleRuns().map(r=>r.run_id).filter(id=>!TBL.pick.includes(id))));
+$('#btn-pick-none').onclick = () => setPick([]);
+$('#btn-pick-recent').onclick = () => setPick(TBL.rows.slice().sort((a,b)=>b.created_at-a.created_at).slice(0,10).map(r=>r.run_id));
+$('#btn-pick-latest').onclick = () => {
+  const latest = new Map();
+  TBL.rows.forEach(r => { const k = r.instance_id || r.instance_name, p = latest.get(k); if (!p || r.created_at > p.created_at) latest.set(k, r); });
+  setPick(Array.from(latest.values()).map(r=>r.run_id));
+};
+$('#btn-tbl-tex').onclick = () => TBL.exports.tex && copyText(TBL.exports.tex, 'LaTeX');
+$('#btn-tbl-md').onclick = () => TBL.exports.md && copyText(TBL.exports.md, 'Markdown');
+$('#btn-tbl-csv').onclick = () => {
+  if (!TBL.exports.csv) return;
+  const blob = new Blob(['\ufeff'+TBL.exports.csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'rehandle_comparison.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+// ---------------------------------------------------------------- boot
+// ---------------------------------------------------------------- 옛 화면 / 서버 재시작 감지
+// 열어 둔 탭은 index.html 이 바뀌어도 그대로라 새 버튼이 안 보인다 → 바뀌면 띠로 알린다.
+const VERSION = { ui: null };
+async function checkVersion(){
+  let v;
+  try { v = await api('/api/version'); } catch(e){ return; }
+  if (VERSION.ui === null) VERSION.ui = v.ui;
+  const msgs = [];
+  if (v.ui !== VERSION.ui) msgs.push('화면 파일이 업데이트됐습니다. 새로고침하면 새 화면이 열립니다.');
+  if ((v.stale_py || []).length)
+    msgs.push(`서버가 켜진 뒤 바뀐 코드가 있어 서버 재시작이 필요합니다 (${v.stale_py.slice(0,4).join(', ')}${v.stale_py.length>4?' …':''}) — 터미널에서 Ctrl+C 후 python run_server.py`);
+  $('#ver-msg').textContent = msgs.join('  ·  ');
+  $('#ver-reload').style.display = v.ui !== VERSION.ui ? '' : 'none';
+  $('#ver-banner').classList.toggle('show', msgs.length > 0);
+}
+$('#ver-reload').onclick = () => location.reload();
+setInterval(checkVersion, 10000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+
+(async function init(){
+  state.config = await api('/api/config');
+  VERSION.ui = (state.config.version || {}).ui ?? null;
+  checkVersion();
+  state.instance = deep(state.config.default_instance);
+  state.config.methods.filter(m => m.available).forEach(m => state.selected.add(m.key));
+  renderMethods(); renderInstance(); renderHome(); renderHomeInstances(); renderServerStatus();
+  try { $('#run-owner').value = localStorage.getItem('rw_owner') || ''; } catch(e){}
+  const L = state.config.limits || {};
+  if (state.config.shared) $('.sub').textContent = `공용 서버 ${state.config.hostname||''} · 한 번에 한 실험씩 순서대로 실행`;
+  $('#limit-info').innerHTML = `자원 제한: 기본 <b>${L.default_threads}</b> 스레드 / 상한 <b>${L.max_threads}</b> (머신 ${L.cpu_count} 스레드) · 최대 실행 <b>${L.max_time_limit}</b>초.`;
+})();
+
+</script>
+</body>
+</html>

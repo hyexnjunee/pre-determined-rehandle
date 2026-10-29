@@ -1,0 +1,34 @@
+# ============================================================
+# Pre-Determined_Rehandle — 연구실 서버로 올릴 것만 (코드 · 노트북 · 문서 · 실험 세트)
+# 동원 원본 데이터와 분석 산출물은 올리지 않는다 (용량 · 외부 반출 주의)
+# ============================================================
+__pycache__/
+*.pyc
+.DS_Store
+.ipynb_checkpoints/
+.webref.tgz
+
+# 원본 데이터 (동원 CSV) — 필요하면 rsync 로 따로 (SERVER.md 6절)
+/data/
+
+# 분석 산출물: 웹이 읽는 추천 구간 표만 올림 (시간대별 원자료 hour_windows_all.csv 는 제외)
+/analysis/*
+!/analysis/instance_candidates/
+/analysis/instance_candidates/out/
+/analysis/instance_candidates/hour_windows_all.csv
+
+# 웹 실행 결과 · 토큰 · 캐시는 서버에만 (실험 세트는 올림)
+/web/data/runs/*
+!/web/data/runs/.gitkeep
+/web/data/instances/*
+!/web/data/instances/.gitkeep
+/web/data/realcache/
+/web/data/.access_token
+/web/data/server.log
+/web/data/server.pid
+/web/experiments/out/
+
+# 큰 산출물 · 맨 위의 분석 보고서 html
+*.pdf
+*.pptx
+/*.html
