@@ -334,7 +334,10 @@ class JobManager:
                                    if j["run_id"] in waiting else 0),
             } for j in jobs]
 
-    def snapshot(self, run_id: str, log_from: int = 0) -> dict | None:
+    def snapshot(self, run_id: str, log_from: int = 0, res_from: int = 0) -> dict | None:
+        """res_from = 화면이 이미 받은 결과 수. 그 뒤에 새로 끝난 결과(와 그 로그 · 그림)만 보낸다.
+        (예전에는 0.5초마다 모든 결과 · 그림(PNG base64, 개당 수백 KB) · 로그를 통째로 보내
+        결과가 쌓이면 서버와 브라우저가 둘 다 느려지고 화면 · 콘솔이 멈춘 것처럼 보였다)"""
         with self.lock:
             job = self.jobs.get(run_id)
             if job is None:
@@ -343,7 +346,14 @@ class JobManager:
         # 락 밖에서 (파일 tail 이 들어갈 수 있으므로)
         chunk, log_offset = live.read_since(log_from)
         with self.lock:
+            allres = job["results"]
+            if res_from < 0 or res_from > len(allres):
+                res_from = 0
+            new_res = list(allres[res_from:])
+            new_keys = [r.get("method") for r in new_res]
             return {
+                "results_from": res_from,
+                "n_results": len(allres),
                 "live_chunk": chunk,
                 "log_offset": log_offset,
                 "cancel_requested": job["cancel_requested"],
@@ -358,14 +368,14 @@ class JobManager:
                 "progress": job["progress"],
                 "total": len(job["methods"]),
                 "methods": job["methods"],
-                "results": list(job["results"]),
+                "results": new_res,
                 "saved": job["saved"],
                 "error": job["error"],
                 "label": job["label"],
                 "objective": job["objective"],
                 "created_at": job["created_at"],
-                "logs": {k: (v[-200_000:] if v else "") for k, v in job["logs"].items()},
-                "figures": {k: list(v) for k, v in job["figures"].items()},
+                "logs": {k: (v[-200_000:] if v else "") for k, v in job["logs"].items() if k in new_keys},
+                "figures": {k: list(v) for k, v in job["figures"].items() if k in new_keys},
             }
 
 
@@ -404,9 +414,13 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- 유틸 --------------------------------------------------------------
     def log_message(self, fmt, *args):    # 콘솔 소음 줄이기
-        if "/api/jobs" in (self.path or ""):
+        if "/api/jobs" in (self.path or "") or "/api/version" in (self.path or ""):
             return
-        super().log_message(fmt, *args)
+        # 실행 중에는 sys.stderr 가 그 작업의 실행 콘솔로 돌려져 있어서, 접속 기록이 실행 콘솔에 섞였다 → 진짜 터미널로
+        try:
+            sys.__stderr__.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), fmt % args))
+        except Exception:
+            pass
 
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
@@ -562,7 +576,11 @@ class Handler(BaseHTTPRequestHandler):
                     log_from = int((query.get("log_from") or ["0"])[0])
                 except ValueError:
                     log_from = 0
-                snap = self.jobs.snapshot(path.rsplit("/", 1)[-1], log_from)
+                try:
+                    res_from = int((query.get("res_from") or ["0"])[0])
+                except ValueError:
+                    res_from = 0
+                snap = self.jobs.snapshot(path.rsplit("/", 1)[-1], log_from, res_from)
                 if snap is None:
                     return self._json({"error": "not found"}, 404)
                 return self._json(snap)

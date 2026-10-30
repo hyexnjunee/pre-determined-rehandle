@@ -218,9 +218,16 @@ python experiments/run_rolling.py --jobs "" --sc-gaps 800 --lc-gaps 900 --mip   
 `목록에 저장` 으로 인스턴스 목록에 `[5h 균형] …`, `[5h 극단] …` 이름으로 저장한다. 정의는 `app/instance_sets.py`(시드 고정),
 파일은 `data/instance_sets/rolling5h/` (`python experiments/make_instance_sets.py` 로 다시 만듦, 없으면 서버가 정의로 바로 만듦).
 
+**10시간 세트** (`rolling10h`, 같은 패널의 위 탭): 균형 18개(부하 0.5/0.7/0.9 격자 × 시드 2), 대규모 6개(작업 210~260개:
+부하 1.0 · 과부하 1.15 · rehandle 이 드물어 작업이 짧고 아주 많은 1.0), 몰림 20개(평균 부하는 SC·LC 0.7 로 같고
+도착이 시간대에 몰림 — 오전 · 한낮 · 저녁 몰림, 두 번 몰림, 1시간 폭주, SC만 · LC만 몰림, 엇갈린 몰림, 동시 몰림, 점점 증가 × 시드 2).
+표의 "가장 바쁜 1시간" = 1시간 창(15분씩 밀며)에 도착한 작업량 ÷ 1시간의 최댓값, "시간별 도착" = 시간마다 도착 수(파랑 SC · 주황 LC).
+부하 지도는 "평균 부하 / 가장 바쁜 1시간" 으로 바꿔 볼 수 있다.
+
 ```bash
 python experiments/run_rolling.py --set rolling5h --agv-info 60                 # 세트 전체
 python experiments/run_rolling.py --set rolling5h --set-group 극단 --agv-info 0,60
+python experiments/run_rolling.py --set rolling10h --set-group 몰림 --agv-info 60 --workers 8
 python experiments/run_rolling.py --set rolling5h --agv-info 60 --replan event,15,30,60  # 작업 투입 간격 비교
 python experiments/run_rolling.py --set rolling5h --mip --workers 8 --threads 8          # 인스턴스 8개 동시 (서버)
 ```
@@ -264,7 +271,7 @@ web/
       rules.py             휴리스틱 공용 함수 (작업 분해 · 제약 검증 · 목적값). 2015 논문 기반 LonRem · RemReq · RH+LonRem 클래스도 남아 있으나 2026-10-19 비교 목록에서 뺌
       window_rule.py       Window–Slack 지원 규칙 휴리스틱
       rolling.py           롤링 호라이즌 (정보 공개 시점마다 재계획 · 확정 · 실행)
-    instance_sets.py       실험 인스턴스 세트 정의 (롤링 5시간: 균형 27 + 극단 16)
+    instance_sets.py       실험 인스턴스 세트 정의 (5시간: 균형 27 + 극단 16 · 10시간: 균형 18 + 대규모 6 + 몰림 20)
     nbchart.py             휴리스틱 결과를 노트북 시각화 셀로 그리기 (노트북 원본 차트 카드)
   experiments/run_experiments.py  비교 실험 일괄 실행 (소형 · 부하 격자 · 실데이터)
   experiments/run_rolling.py      롤링 호라이즌 실험 (AGV 정보 시간 H × 부하, --set 으로 실험 세트)

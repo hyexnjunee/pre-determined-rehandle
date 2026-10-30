@@ -143,6 +143,9 @@ class NotebookModel(Method):
         extra = [
             f"model.Params.MIPGap = {float(options.get('mip_gap', 0.0) or 0.0)!r}",
             f"model.Params.LogFile = {log_file!r}",
+            # 화면 로그는 LogFile 을 실시간으로 읽어 붙인다. gurobipy 는 콘솔 출력도 파이썬 stdout 으로 내보내므로
+            # 그대로 두면 같은 줄이 두 번씩 찍힌다 → 콘솔 출력은 끔
+            "model.Params.LogToConsole = 0",
         ]
         threads = int(options.get("threads", limits.DEFAULT_THREADS) or limits.DEFAULT_THREADS)
         extra.append(f"model.Params.Threads = {min(threads, limits.MAX_THREADS)}")

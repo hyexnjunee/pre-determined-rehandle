@@ -30,7 +30,7 @@ import io
 import time
 
 from ..schema import Instance, Job, Block, validate
-from .. import nbrunner
+from .. import nbrunner, livelog
 from .base import Method, ScheduleEntry
 from .rules import EPS, tasks_of, verify, objective, init_pos, first_start, conflict, etd
 
@@ -264,8 +264,14 @@ class RollingMethod(Method):
                     opt["time_limit"] = 1.0
                     n_fast += 1
             ti = time.perf_counter()
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                r = method.solve(sub, opt)
+            # 재계획마다 안쪽 MIP 로그까지 화면에 흘리면 수십~수백 번 쌓여 무거워진다 → [롤링] 진행 줄만 보이게
+            saved_live = livelog.CURRENT
+            livelog.set_current(None)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    r = method.solve(sub, opt)
+            finally:
+                livelog.set_current(saved_live)
             dt = time.perf_counter() - ti
             inner_time += dt
             n_solves += 1

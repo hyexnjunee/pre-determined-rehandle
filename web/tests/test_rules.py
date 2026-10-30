@@ -189,6 +189,29 @@ class RulesTests(unittest.TestCase):
                     rel=min(t for t in ts if t>=rev-1e-6)
                     self.assertGreaterEqual(e.start+1e-6,rel,(e.task,rev,rel))
 
+    def test_instance_sets_10h(self):
+        """10시간 세트: 균형 18 · 대규모 6 · 몰림 20, 도착은 10시간 안 · 크레인 순서대로, 평균 부하 목표 ± 0.04,
+        몰림은 가장 바쁜 1시간 부하가 평균보다 확실히 큼, 대규모는 작업 200개 이상."""
+        from app.instance_sets import build_set, stats, TOL, T10H
+        from app.schema import validate
+        a=build_set("rolling10h")
+        g=lambda name: [x for x in a if x[0]["group"]==name]
+        self.assertEqual((len(g("균형")),len(g("대규모")),len(g("몰림"))),(18,6,20))
+        self.assertEqual(len({i.id for _,i in a}),44)
+        for s,i in a:
+            self.assertFalse(validate(i)["errors"],i.name)
+            for seq in (i.seq_sc,i.seq_lc):
+                arr=[i.ready(j) for j in seq]
+                self.assertEqual(arr,sorted(arr),i.name)
+                self.assertLess(arr[-1],T10H)
+            st=stats(i)
+            self.assertLessEqual(abs(st["rho_sc"]-s["rho_sc"]),TOL+1e-9,i.name)
+            self.assertLessEqual(abs(st["rho_lc"]-s["rho_lc"]),TOL+1e-9,i.name)
+            if s["group"]=="몰림":
+                self.assertGreater(max(st["rho_peak_sc"],st["rho_peak_lc"]),1.3,i.name)
+            if s["group"]=="대규모":
+                self.assertGreaterEqual(i.num_jobs(),200,i.name)
+
     def test_generator_arrival_and_go_bay(self):
         """도착 방식(일정·포아송·몰림)과 GO bay 위치 옵션: 순서대로 도착, 평균 간격 유지, bay 범위."""
         import statistics

@@ -132,6 +132,10 @@
   .gstack .prebtn{margin-left:6px}
   .gstack.focus-pre .prebtn{background:#e7f6ef;border-color:#0e9f6e;color:#0b7a55}
   .ctag.bal{background:#e8f0ff;color:#1d4ed8} .ctag.ext{background:#fff1e6;color:#c2410c}
+  .ctag.big{background:#f3e8ff;color:#7e22ce} .ctag.peak{background:#e7f6ef;color:#0b7a55}
+  .set-tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+  button.small-btn.prebtn-on{background:#eef2ff;border-color:#6366f1;color:#3730a3;font-weight:700}
+  .set-tabs button.on{background:#eef2ff;border-color:#6366f1;color:#3730a3;font-weight:700}
   .set-plot{display:block;width:100%;max-width:420px;height:auto}
   .set-plot circle{cursor:pointer}
   .set-plot circle.on{stroke:#111;stroke-width:2}
@@ -345,7 +349,7 @@
             <button class="ghost" id="btn-preset">Toy 12작업</button>
             <button class="ghost" id="btn-preset-small">소형 5작업</button>
             <button class="ghost" id="btn-real">실데이터 가져오기</button>
-            <button class="ghost" id="btn-sets" title="롤링 호라이즌 실험용 5시간 인스턴스 세트 (균형 27 + 극단 16)">실험 세트 (5시간)</button>
+            <button class="ghost" id="btn-sets" title="롤링 호라이즌 실험용 인스턴스 세트 — 5시간(균형 27 + 극단 16) · 10시간(균형 18 + 대규모 6 + 몰림 20)">실험 세트</button>
           </span>
         </h2>
         <div class="body" id="set-panel" style="display:none;border-bottom:1px solid var(--line);background:#fbfaff">
@@ -1082,56 +1086,86 @@ async function loadSets(){
   catch(e){ $('#set-box').innerHTML = `<span class="pill err">불러오기 실패</span> <span class="small">서버를 다시 켜 주세요 (새 기능)</span>`; return; }
   renderSets();
 }
+const SET_COLOR = {'균형':'#3b6fe0', '극단':'#ea7a2c', '대규모':'#9333ea', '몰림':'#0e9f6e'};
 function setPlot(rows){
-  // 부하 지도: x = SC 부하, y = LC 부하 (작업량 / 5시간). 균형 = 파랑, 극단 = 주황
-  const W = 400, H = 300, L = 44, B = 36, T = 12, R = 12, lo = 0.2, hi = 1.3;
+  // 부하 지도: x = SC 부하, y = LC 부하. 평균(작업량 ÷ 시간 창) 또는 가장 바쁜 1시간
+  const peak = SETS.axis === 'peak' && rows.some(r => r.rho_peak_sc != null);
+  const X = r => peak ? r.rho_peak_sc : r.rho_sc, Y = r => peak ? r.rho_peak_lc : r.rho_lc;
+  const W = 400, H = 300, L = 44, B = 36, T = 12, R = 12, lo = 0.2;
+  const hi = Math.max(1.3, ...rows.map(r => Math.max(X(r)||0, Y(r)||0) + 0.1));
   const x = v => L + (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo) * (W - L - R);
   const y = v => H - B - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo) * (H - B - T);
-  const ticks = [0.3, 0.5, 0.7, 0.9, 1.1];
-  let g = ticks.map(t => `<line x1="${x(t)}" y1="${T}" x2="${x(t)}" y2="${H-B}" stroke="#eef1f5"/>
-      <line x1="${L}" y1="${y(t)}" x2="${W-R}" y2="${y(t)}" stroke="#eef1f5"/>
+  const stp = hi > 2.2 ? 0.5 : 0.2, ticks = [];
+  for (let t = Math.ceil(lo / stp) * stp; t <= hi + 1e-9; t += stp) ticks.push(+t.toFixed(1));
+  let g = ticks.map(t => `<line x1="${x(t)}" y1="${T}" x2="${x(t)}" y2="${H-B}" stroke="#eceef1"/>
+      <line x1="${L}" y1="${y(t)}" x2="${W-R}" y2="${y(t)}" stroke="#eceef1"/>
       <text x="${x(t)}" y="${H-B+14}" font-size="10" text-anchor="middle" fill="#667">${t}</text>
       <text x="${L-6}" y="${y(t)+3}" font-size="10" text-anchor="end" fill="#667">${t}</text>`).join('');
   g += `<line x1="${x(1)}" y1="${T}" x2="${x(1)}" y2="${H-B}" stroke="#f3b4b4" stroke-dasharray="3 3"/>
         <line x1="${L}" y1="${y(1)}" x2="${W-R}" y2="${y(1)}" stroke="#f3b4b4" stroke-dasharray="3 3"/>
-        <text x="${(L+W-R)/2}" y="${H-6}" font-size="11" text-anchor="middle" fill="#334">SC(해측) 부하 ρ</text>
-        <text x="12" y="${(T+H-B)/2}" font-size="11" text-anchor="middle" fill="#334" transform="rotate(-90 12 ${(T+H-B)/2})">LC(육측) 부하 ρ</text>`;
-  g += rows.map(r => `<circle data-sid="${esc(r.id)}" class="${SETS.pick===r.id?'on':''}" cx="${x(r.rho_sc).toFixed(1)}" cy="${y(r.rho_lc).toFixed(1)}" r="5"
-      fill="${r.group==='균형' ? '#3b6fe0' : '#ea7a2c'}" fill-opacity=".8"><title>${esc(r.name)} · ρ ${r.rho_sc.toFixed(2)} / ${r.rho_lc.toFixed(2)}</title></circle>`).join('');
+        <text x="${(L+W-R)/2}" y="${H-6}" font-size="11" text-anchor="middle" fill="#334">SC(해측) ${peak ? '가장 바쁜 1시간 부하' : '부하 ρ'}</text>
+        <text x="12" y="${(T+H-B)/2}" font-size="11" text-anchor="middle" fill="#334" transform="rotate(-90 12 ${(T+H-B)/2})">LC(육측) ${peak ? '가장 바쁜 1시간 부하' : '부하 ρ'}</text>`;
+  g += rows.map(r => `<circle data-sid="${esc(r.id)}" class="${SETS.pick===r.id?'on':''}" cx="${x(X(r)).toFixed(1)}" cy="${y(Y(r)).toFixed(1)}" r="5"
+      fill="${SET_COLOR[r.group] || '#888'}" fill-opacity=".8"><title>${esc(r.name)} · ${peak ? '가장 바쁜 1시간' : '평균'} ${(+X(r)).toFixed(2)} / ${(+Y(r)).toFixed(2)}</title></circle>`).join('');
   return `<svg class="set-plot" viewBox="0 0 ${W} ${H}" role="img" aria-label="세트 인스턴스의 SC·LC 부하 분포">${g}</svg>`;
+}
+const SET_TAG = {'균형':'bal', '극단':'ext', '대규모':'big', '몰림':'peak'};
+function setSpark(r){
+  // 시간별 도착 수: 위 = SC(AGV), 아래 = LC(외부트럭)
+  const a = r.hist_sc || [], b = r.hist_lc || [];
+  if (!a.length) return '–';
+  const mx = Math.max(1, ...a, ...b), n = a.length, W = Math.max(60, n * 7), bw = W / n;
+  const bars = (h, y0, col, up) => h.map((v, i) => { const hh = 11 * v / mx;
+    return `<rect x="${(i*bw+0.5).toFixed(1)}" y="${(up ? y0 - hh : y0).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${hh.toFixed(1)}" fill="${col}"/>`; }).join('');
+  return `<svg width="${W}" height="26" viewBox="0 0 ${W} 26" aria-label="시간별 도착 수"><title>시간별 도착 수 (1시간 칸)\nSC: ${a.join(' ')}\nLC: ${b.join(' ')}</title>
+    ${bars(a, 12, '#3b6fe0', true)}<line x1="0" y1="12.5" x2="${W}" y2="12.5" stroke="#ccd3dd"/>${bars(b, 13, '#e0703b', false)}</svg>`;
 }
 function renderSets(){
   const d = (SETS.data||[]).find(x => x.set === SETS.set) || (SETS.data||[])[0];
   if (!d){ $('#set-box').innerHTML = '<span class="small muted">세트가 없습니다.</span>'; return; }
+  SETS.set = d.set;
+  const groups = [...new Set(d.rows.map(r => r.group))];
+  if (SETS.filter && !groups.includes(SETS.filter)) SETS.filter = '';
   const rows = d.rows.filter(r => !SETS.filter || r.group === SETS.filter);
   const cnt = g => d.rows.filter(r => r.group === g).length;
-  const tag = g => g === '균형' ? 'bal' : 'ext';
-  $('#set-box').innerHTML = `
+  const tag = g => SET_TAG[g] || 'ext';
+  const tabs = (SETS.data||[]).length > 1 ? `<div class="set-tabs">${SETS.data.map(x =>
+    `<button class="ghost small-btn${x.set===d.set?' on':''}" data-setname="${esc(x.set)}">${esc(x.title)} · ${x.rows.length}개</button>`).join('')}</div>` : '';
+  $('#set-box').innerHTML = tabs + `
     <div class="gentitle" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${esc(d.title)}
       <span style="margin-left:auto;display:flex;gap:4px;flex-wrap:wrap">
         <button class="ghost small-btn" data-sf="">전체 ${d.rows.length}</button>
-        <button class="ghost small-btn" data-sf="균형"><span class="ctag bal">균형</span> ${cnt('균형')}</button>
-        <button class="ghost small-btn" data-sf="극단"><span class="ctag ext">극단</span> ${cnt('극단')}</button>
+        ${groups.map(g => `<button class="ghost small-btn" data-sf="${esc(g)}"><span class="ctag ${tag(g)}">${esc(g)}</span> ${cnt(g)}</button>`).join('')}
         <button class="ghost small-btn" id="btn-set-save" title="보이는 인스턴스를 인스턴스 목록에 저장 (같은 내용은 한 번만)">${SETS.filter ? SETS.filter + ' 묶음' : '전체'} 목록에 저장</button>
       </span></div>
     <div class="small muted" style="margin-bottom:8px">${esc(d.note)} 행이나 점을 누르면 편집기에 불러옵니다. 출처: ${esc(d.source||'')}</div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
-      <div style="flex:0 1 400px;min-width:260px">${setPlot(rows)}
-        <div class="small muted">점 = 인스턴스 하나의 실제 부하 (작업량 ÷ 5시간). 1 을 넘으면(점선 밖) 그 크레인은 일이 넘침.</div></div>
+      <div style="flex:0 1 400px;min-width:260px">
+        ${rows.some(r => r.rho_peak_sc != null) ? `<div style="display:flex;gap:4px;margin-bottom:4px">
+          <button class="ghost small-btn${SETS.axis!=='peak'?' prebtn-on':''}" data-axis="avg">평균 부하</button>
+          <button class="ghost small-btn${SETS.axis==='peak'?' prebtn-on':''}" data-axis="peak">가장 바쁜 1시간</button></div>` : ''}
+        ${setPlot(rows)}
+        <div class="small muted">점 = 인스턴스 하나. ${SETS.axis==='peak' ? '가장 바쁜 1시간에 들어온 작업량 ÷ 1시간 (몰림 정도)' : `평균 부하 = 작업량 ÷ ${d.rows[0] && d.rows[0].hours ? d.rows[0].hours : 5}시간`}. 1 을 넘으면(점선 밖) 그 크레인은 일이 넘침.</div></div>
       <div class="cand-wrap" style="flex:1 1 420px;min-width:0;max-height:360px;overflow:auto"><table class="cand-table">
         <thead><tr><th>묶음</th><th>이름</th>
           <th class="num" title="DS · LD · GI · GO">작업</th>
           <th class="num" title="적하(LD) / 반출(GO) rehandle 수">RH 적하/반출</th>
-          <th class="num" title="실제 부하 ρ (작업량 ÷ 5시간)">부하 SC / LC</th>
+          <th class="num" title="평균 부하 ρ (작업량 ÷ 시간 창)">부하 SC / LC</th>
+          <th class="num" title="1시간 창(15분씩 밀며)에 도착한 작업의 작업량 ÷ 1시간 의 최댓값 — 몰림 정도. 1 을 넘으면 그 시간엔 일이 넘침">가장 바쁜 1시간</th>
+          <th title="시간별 도착 수 (위 파랑 = SC · AGV, 아래 주황 = LC · 외부트럭)">시간별 도착</th>
           <th class="num" title="마지막 트럭 도착 (시간)">마지막 도착</th></tr></thead>
         <tbody>${rows.map(r => `<tr data-sid="${esc(r.id)}" class="${SETS.pick===r.id?'on':''}" title="${esc(r.desc)}">
           <td><span class="ctag ${tag(r.group)}">${esc(r.group)}</span></td><td>${esc(r.label)} #${esc(r.key.split('_').pop())}</td>
           <td class="num">${r.n_ds}·${r.n_ld}·${r.n_gi}·${r.n_go}</td><td class="num">${r.rh_ld} / ${r.rh_go}</td>
-          <td class="num">${r.rho_sc.toFixed(2)} / ${r.rho_lc.toFixed(2)}</td><td class="num">${r.last_arrival_h.toFixed(1)}h</td></tr>`).join('')}
+          <td class="num">${r.rho_sc.toFixed(2)} / ${r.rho_lc.toFixed(2)}</td>
+          <td class="num">${r.rho_peak_sc==null ? '–' : `${r.rho_peak_sc.toFixed(2)} / ${r.rho_peak_lc.toFixed(2)}`}</td>
+          <td>${setSpark(r)}</td><td class="num">${r.last_arrival_h.toFixed(1)}h</td></tr>`).join('')}
         </tbody></table></div>
     </div>
     <div id="set-msg" class="small" style="margin-top:6px"></div>`;
+  $$('#set-box [data-setname]').forEach(b => b.onclick = () => { SETS.set = b.dataset.setname; SETS.filter = ''; SETS.pick = null; renderSets(); });
   $$('#set-box [data-sf]').forEach(b => b.onclick = () => { SETS.filter = b.dataset.sf; renderSets(); });
+  $$('#set-box [data-axis]').forEach(b => b.onclick = () => { SETS.axis = b.dataset.axis; renderSets(); });
   $$('#set-box [data-sid]').forEach(el => el.onclick = () => pickSetInstance(el.dataset.sid));
   $('#btn-set-save').onclick = saveSet;
 }
@@ -1148,7 +1182,9 @@ async function saveSet(){
   const btn = $('#btn-set-save'); btn.disabled = true;
   try {
     const r = await post('/api/instance_sets/save', {set: SETS.set, group: SETS.filter});
-    $('#set-msg').innerHTML = `<span class="pill ok">${(r.saved_ids||[]).length}개 저장</span> 인스턴스 탭과 홈 선택 목록에서 <b>[5h 균형]</b> · <b>[5h 극단]</b> 으로 찾을 수 있습니다.`;
+    const d = (SETS.data||[]).find(x => x.set === SETS.set) || {rows: []};
+    const tags = [...new Set(d.rows.filter(x => !SETS.filter || x.group === SETS.filter).map(x => (x.name.match(/^\[[^\]]+\]/)||[''])[0]))];
+    $('#set-msg').innerHTML = `<span class="pill ok">${(r.saved_ids||[]).length}개 저장</span> 인스턴스 탭과 홈 선택 목록에서 ${tags.map(t => `<b>${esc(t)}</b>`).join(' · ')} 로 찾을 수 있습니다.`;
     try { await renderHomeInstances(); } catch(e){}
   } finally { btn.disabled = false; }
 }
@@ -1495,7 +1531,7 @@ $('#btn-run').onclick = async () => {
     $('#run-label').focus(); return;
   }
   $('#btn-run').disabled = true;
-  state.results = []; state.logs = {}; state.figures = {}; state.logOffset = 0;
+  state.results = []; state.logs = {}; state.figures = {}; state.logOffset = 0; state.renderedCount = -1; consoleLen = 0; state.pollRun = null;
   state.runInstance = deep(readInstance());
   state.objective = $('#run-objective').value;
   try { localStorage.setItem('rw_owner', $('#run-owner').value); } catch(e){}
@@ -1517,25 +1553,46 @@ $('#btn-cancel').onclick = async () => {
   $('#btn-cancel').disabled = true; $('#btn-cancel').textContent = '취소 중…';
   await post(`/api/jobs/${state.job}/cancel`, {});
 };
-$('#btn-console-clear').onclick = () => { $('#console-out').textContent = ''; };
+$('#btn-console-clear').onclick = () => { $('#console-out').textContent = ''; consoleLen = 0; };
 
+// 콘솔: 매번 전체 글자를 다시 쓰지 않고 새 조각만 덧붙인다 (긴 Gurobi 로그에서 화면이 굳던 문제)
+let consoleLen = 0;
 function appendConsole(chunk){
   if (!chunk) return;
   const pre = $('#console-out');
   const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
-  pre.textContent += chunk;
-  if (pre.textContent.length > 400000) pre.textContent = pre.textContent.slice(-300000);
+  pre.appendChild(document.createTextNode(chunk));
+  consoleLen += chunk.length;
+  if (consoleLen > 400000) { const t = pre.textContent.slice(-300000); pre.textContent = t; consoleLen = t.length; }
   if ($('#console-follow').checked || atBottom) pre.scrollTop = pre.scrollHeight;
 }
 
 async function poll(runId){
-  const snap = await api(`/api/jobs/${runId}?log_from=${state.logOffset||0}`);
+  let snap;
+  try {
+    if (state.pollRun !== runId) { state.pollRun = runId; state.pollRes = []; state.pollLogs = {}; state.pollFigs = {}; }
+    snap = await api(`/api/jobs/${runId}?log_from=${state.logOffset||0}&res_from=${state.pollRes.length}`);
+  } catch(e) {
+    // 서버가 잠깐 바쁘거나 네트워크가 끊겨도 폴링을 멈추지 않는다
+    $('#run-status').innerHTML = '<span class="spinner"></span> 서버 응답 기다리는 중…';
+    return setTimeout(() => poll(runId), 2000);
+  }
   if (snap.log_offset != null) state.logOffset = snap.log_offset;
   appendConsole(snap.live_chunk);
-  state.results = snap.results || []; state.logs = snap.logs || {}; state.figures = snap.figures || {};
+  // 결과는 새로 끝난 것만 받는다 (results_from = 이미 받은 개수)
+  const fresh = snap.results || [];
+  if (!snap.results_from) { state.pollRes = fresh; state.pollLogs = snap.logs || {}; state.pollFigs = snap.figures || {}; }
+  else if (fresh.length) {
+    state.pollRes = state.pollRes.concat(fresh);
+    Object.assign(state.pollLogs, snap.logs || {}); Object.assign(state.pollFigs, snap.figures || {});
+  }
+  state.results = state.pollRes; state.logs = state.pollLogs; state.figures = state.pollFigs;
   state.objective = snap.objective || state.objective;
-  renderResults();
   const done = ['done','error','cancelled'].includes(snap.status);
+  if (fresh.length || done || state.renderedCount !== state.results.length) {
+    try { renderResults(); } catch(e) { console.error(e); }
+    state.renderedCount = state.results.length;
+  }
   if (done) {
     $('#run-status').innerHTML = snap.status==='error' ? '<span class="pill err">실패</span>'
       : snap.status==='cancelled' ? `<span class="pill warn">취소됨</span> ${snap.saved?'· 완료분은 저장됨':''}`
@@ -1550,7 +1607,7 @@ async function poll(runId){
   }
   if ((snap.limit_notes||[]).length)
     $('#limit-info').innerHTML = snap.limit_notes.map(n=>`<span class="pill warn">${esc(n)}</span>`).join(' ');
-  if (!done) return setTimeout(() => poll(runId), 500);
+  if (!done) return setTimeout(() => poll(runId), document.hidden ? 3000 : 700);
   $('#btn-run').disabled = false; $('#btn-cancel').style.display = 'none';
   $('#console-hint').textContent = '(실행 종료)';
   if (snap.error) $('#validation').innerHTML = `<div class="msg err"><b>실행 오류</b><pre class="small">${esc(snap.error)}</pre></div>`;
