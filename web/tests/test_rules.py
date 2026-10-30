@@ -212,6 +212,28 @@ class RulesTests(unittest.TestCase):
             if s["group"]=="대규모":
                 self.assertGreaterEqual(i.num_jobs(),200,i.name)
 
+    def test_instance_sets_loading(self):
+        """적하 중심 세트: 적하 비중 18 · 적하 RH 6 · 선박 패턴 12, 적하 비중 맞음, 양하 후 적하 순서, 적하 장치 위치."""
+        from app.instance_sets import build_set, stats, TOL, T10H
+        from app.schema import validate
+        a=build_set("loading10h")
+        self.assertEqual(len(a),36)
+        for s,i in a:
+            self.assertFalse(validate(i)["errors"],i.name)
+            st=stats(i)
+            if "ld_share" in s:
+                self.assertAlmostEqual(st["ld_share"],s["ld_share"],delta=0.02)
+            if s["match"]:
+                self.assertLessEqual(abs(st["rho_sc"]-s["rho_sc"]),TOL+1e-9,i.name)
+            arr=[i.ready(j) for j in i.seq_sc]
+            self.assertEqual(arr,sorted(arr)); self.assertLess(arr[-1],T10H)
+            if s.get("sc_order")=="ds_then_ld":
+                t="".join(j.type[0] for j in i.seq_sc)
+                self.assertEqual(t,"D"*t.count("D")+"L"*t.count("L"))
+            if s.get("gen",{}).get("ld_bay")=="land":
+                import statistics
+                self.assertGreater(statistics.median(j.bay for j in i.seq_sc if j.type=="LD"),i.block.n_bay*0.6)
+
     def test_generator_arrival_and_go_bay(self):
         """도착 방식(일정·포아송·몰림)과 GO bay 위치 옵션: 순서대로 도착, 평균 간격 유지, bay 범위."""
         import statistics

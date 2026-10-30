@@ -133,6 +133,7 @@
   .gstack.focus-pre .prebtn{background:#e7f6ef;border-color:#0e9f6e;color:#0b7a55}
   .ctag.bal{background:#e8f0ff;color:#1d4ed8} .ctag.ext{background:#fff1e6;color:#c2410c}
   .ctag.big{background:#f3e8ff;color:#7e22ce} .ctag.peak{background:#e7f6ef;color:#0b7a55}
+  .ctag.ldshare{background:#e0f2fe;color:#0369a1} .ctag.ldrh{background:#fef3c7;color:#a16207} .ctag.vessel{background:#fce7f3;color:#be185d}
   .set-tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
   button.small-btn.prebtn-on{background:#eef2ff;border-color:#6366f1;color:#3730a3;font-weight:700}
   .set-tabs button.on{background:#eef2ff;border-color:#6366f1;color:#3730a3;font-weight:700}
@@ -349,7 +350,7 @@
             <button class="ghost" id="btn-preset">Toy 12작업</button>
             <button class="ghost" id="btn-preset-small">소형 5작업</button>
             <button class="ghost" id="btn-real">실데이터 가져오기</button>
-            <button class="ghost" id="btn-sets" title="롤링 호라이즌 실험용 인스턴스 세트 — 5시간(균형 27 + 극단 16) · 10시간(균형 18 + 대규모 6 + 몰림 20)">실험 세트</button>
+            <button class="ghost" id="btn-sets" title="롤링 호라이즌 실험용 인스턴스 세트 — 5시간(균형 27 + 극단 16) · 10시간(균형 18 + 대규모 6 + 몰림 20) · 적하 중심 10시간(36)">실험 세트</button>
           </span>
         </h2>
         <div class="body" id="set-panel" style="display:none;border-bottom:1px solid var(--line);background:#fbfaff">
@@ -1086,7 +1087,7 @@ async function loadSets(){
   catch(e){ $('#set-box').innerHTML = `<span class="pill err">불러오기 실패</span> <span class="small">서버를 다시 켜 주세요 (새 기능)</span>`; return; }
   renderSets();
 }
-const SET_COLOR = {'균형':'#3b6fe0', '극단':'#ea7a2c', '대규모':'#9333ea', '몰림':'#0e9f6e'};
+const SET_COLOR = {'균형':'#3b6fe0', '극단':'#ea7a2c', '대규모':'#9333ea', '몰림':'#0e9f6e', '적하 비중':'#0284c7', '적하 RH':'#ca8a04', '선박 패턴':'#db2777'};
 function setPlot(rows){
   // 부하 지도: x = SC 부하, y = LC 부하. 평균(작업량 ÷ 시간 창) 또는 가장 바쁜 1시간
   const peak = SETS.axis === 'peak' && rows.some(r => r.rho_peak_sc != null);
@@ -1109,7 +1110,7 @@ function setPlot(rows){
       fill="${SET_COLOR[r.group] || '#888'}" fill-opacity=".8"><title>${esc(r.name)} · ${peak ? '가장 바쁜 1시간' : '평균'} ${(+X(r)).toFixed(2)} / ${(+Y(r)).toFixed(2)}</title></circle>`).join('');
   return `<svg class="set-plot" viewBox="0 0 ${W} ${H}" role="img" aria-label="세트 인스턴스의 SC·LC 부하 분포">${g}</svg>`;
 }
-const SET_TAG = {'균형':'bal', '극단':'ext', '대규모':'big', '몰림':'peak'};
+const SET_TAG = {'균형':'bal', '극단':'ext', '대규모':'big', '몰림':'peak', '적하 비중':'ldshare', '적하 RH':'ldrh', '선박 패턴':'vessel'};
 function setSpark(r){
   // 시간별 도착 수: 위 = SC(AGV), 아래 = LC(외부트럭)
   const a = r.hist_sc || [], b = r.hist_lc || [];
@@ -1748,6 +1749,12 @@ function improvementHTML(rs){
       <div class="box"><div class="k">내부 트럭 DS·LD / 외부 트럭 GI·GO</div>
         <div class="v" style="font-size:16px;margin-top:5px"><span class="${cls(di)}">${sgn(di)}</span> / <span class="${cls(de)}">${sgn(de)}</span></div>
         <div class="sub">${fmt(M(base).truck_wait_internal)} → ${fmt(M(r).truck_wait_internal)} · ${fmt(M(base).truck_wait_external)} → ${fmt(M(r).truck_wait_external)}</div></div>
+      <div class="box"><div class="k">적하(LD) 트럭 대기 — 선박으로 나가는 컨테이너</div>
+        ${(() => { const b = ((M(base).truck_wait_by_type||{}).LD||{}), x = ((M(r).truck_wait_by_type||{}).LD||{});
+          const d = pct(b.sum, x.sum);
+          return b.n ? `<div class="v ${cls(d)}">${sgn(d)}</div>
+            <div class="sub">${fmt(b.sum)} → ${fmt(x.sum)} · 1대 평균 ${(b.avg/60).toFixed(1)} → ${(x.avg/60).toFixed(1)}분 (${b.n}대)</div>`
+            : `<div class="v">–</div><div class="sub">적하 작업 없음</div>`; })()}</div>
       <div class="box"><div class="k">반대편 크레인이 대신한 rehandle</div>
         <div class="v">${M(r).n_assisted||0} <span class="sub">/ ${M(r).n_rehandles||0}</span></div>
         <div class="sub">SC가 ${(M(r).assisted_by||{}).SC||0} · LC가 ${(M(r).assisted_by||{}).LC||0}</div></div>

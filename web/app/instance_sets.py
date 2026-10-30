@@ -23,6 +23,7 @@
   대규모 6개  작업이 아주 많음: 두 크레인 1.0 (≈210작업) · 과부하 1.15 (≈240작업) · rehandle 이 드물어 작업이 짧고 아주 많은 1.0 (≈260작업) × 시드 2
   몰림 20개   평균 부하는 SC 0.7 · LC 0.7 로 같고 도착이 특정 시간대에 몰림 (10가지 × 시드 2):
               오전 · 한낮 · 저녁 몰림, 두 번 몰림, 1시간 폭주, SC만 · LC만 몰림, 엇갈린 몰림, 동시 몰림, 점점 증가
+  (적하 중심 세트 loading10h 는 아래 specs_loading10h 참고)
   도착 시각: 30분 칸마다 상대 도착률 w 를 주고, 누적 도착률의 (k + u)/n 분위점에 k번째 트럭 (u ~ U(0.2, 0.8))
   → 순서는 그대로, 몰린 칸에는 간격이 좁아짐. 표의 '가장 바쁜 1시간 부하' 로 몰림 정도를 본다
 """
@@ -63,13 +64,17 @@ TOL = 0.04          # 부하를 맞추는 세트: 실제 ρ 가 목표 ± 0.04 �
 
 
 def _spec(key, group, label, desc, seed, rho_sc, rho_lc, match=True, set_name="rolling5h",
-          profile_sc=None, profile_lc=None, job_sc=None, job_lc=None, **gen):
+          profile_sc=None, profile_lc=None, job_sc=None, job_lc=None, ld_share=None, sc_order=None, **gen):
     sp = {"key": key, "group": group, "label": label, "desc": desc, "seed": seed,
           "rho_sc": rho_sc, "rho_lc": rho_lc, "match": match, "gen": gen, "set": set_name}
     if profile_sc is not None:
         sp["profile_sc"], sp["profile_lc"] = profile_sc, profile_lc
     if job_sc is not None:
         sp["job_sc"], sp["job_lc"] = job_sc, job_lc
+    if ld_share is not None:
+        sp["ld_share"] = ld_share
+    if sc_order is not None:
+        sp["sc_order"] = sc_order
     return sp
 
 
@@ -175,6 +180,69 @@ def specs_rolling10h() -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------------- 적하 중심 10시간 세트 (2026-10-30)
+def _calibrate(proto: dict, set_name: str, seeds=range(5)) -> dict:
+    """작업 1개 평균 작업량(job_sc · job_lc)을 이 정의로 실제로 재서 맞춘다 → 목표 부하에 맞는 작업 수."""
+    import statistics
+    p = dict(proto)
+    for _ in range(2):
+        r = [stats(build(dict(p, seed=900000 + s), set_name)) for s in seeds]
+        p["job_sc"] = p.get("job_sc", SC_JOB) * statistics.mean(x["rho_sc"] for x in r) / p["rho_sc"]
+        p["job_lc"] = p.get("job_lc", LC_JOB) * statistics.mean(x["rho_lc"] for x in r) / p["rho_lc"]
+    return p
+
+
+def specs_loading10h() -> list[dict]:
+    """해측 적하(LD, 선박으로 나가는 컨테이너) 중심. SC 작업 대부분이 적하이고 육측(LC)은 비교적 여유 → LC 가 적하 rehandle 을 도울지."""
+    if "loading10h" in _CACHE:
+        return _CACHE["loading10h"]
+    S = "loading10h"
+    out = []
+
+    def add(group, key, label, desc, rs, rl, count, seed0, calibrate=True, match=True, **kw):
+        proto = _spec("", group, label, desc, 0, rs, rl, match=match, set_name=S, **kw)
+        if calibrate:
+            proto = _calibrate(proto, S)
+        for k, seed in enumerate(_pick_seeds(proto, seed0, count)):
+            out.append(dict(proto, key=f"{key}_{k + 1}", seed=seed))
+        return proto
+
+    # A. 적하 비중 × 해측 부하 (LC 0.5 고정, 적하 rehandle 50 %)
+    for i, share in enumerate((0.7, 0.85, 1.0)):
+        for j, rs in enumerate((0.7, 0.9, 1.05)):
+            add("적하 비중", f"share{int(share * 100)}_s{int(rs * 100):03d}", f"적하 {int(share * 100)} % · SC {rs:g}",
+                f"해측 작업의 {int(share * 100)} % 가 적하(나머지 양하), 해측 부하 {rs:g} · 육측 0.5", rs, 0.5, 2,
+                100000 + 1000 * (3 * i + j), ld_share=share)
+    # B. 적하 rehandle 강도 — 같은 선박(작업 수 고정), rehandle 이 많을수록 해측 일이 늘어남
+    base = _calibrate(_spec("", "적하 RH", "", "", 0, 0.9, 0.5, set_name=S, ld_share=0.85), S)
+    for n, (key, label, desc, kw) in enumerate([
+            ("rh30", "적하 RH 30 %", "적하의 30 % 에 rehandle (개수는 실데이터 분포, 대부분 1개)", {"rh_prob_ld": 0.3}),
+            ("rh70", "적하 RH 70 %", "적하의 70 % 에 rehandle (실데이터 분포)", {"rh_prob_ld": 0.7}),
+            ("rh90u", "적하 RH 90 % · 1~5개", "적하의 90 % 에 rehandle 1~5개 (균등) — 적하 장치 상태가 아주 나쁨",
+             {"rh_prob_ld": 0.9, "rh_dist": "uniform"})]):
+        add("적하 RH", key, label, desc + " · 적하 85 % · 작업 수는 RH 50 % 기준(해측 0.9)과 같음", 0.9, 0.5, 2,
+            110000 + 1000 * n, calibrate=False, match=False, ld_share=0.85,
+            job_sc=base["job_sc"], job_lc=base["job_lc"], **kw)
+    # C. 선박 작업 패턴
+    wave = _bins((3, 6, 2.5), base=0.55)
+    for n, (key, label, desc, rs, rl, kw) in enumerate([
+            ("discharge_then_load", "양하 후 적하", "선박 1척: 양하를 먼저 끝내고 적하 (해측 순서 = 양하 30 % → 적하 70 %)",
+             0.9, 0.5, {"ld_share": 0.7, "sc_order": "ds_then_ld"}),
+            ("two_vessels", "선박 2척", "양하 → 적하 → 양하 → 적하 (선박 두 척이 이어서 들어옴)",
+             0.9, 0.5, {"ld_share": 0.7, "sc_order": "two_vessels"}),
+            ("loading_wave", "적하 웨이브", "적하 85 % · 해측 AGV 가 3~6시간째 2.5배로 몰림 (선적 마감 전 집중), 육측은 고르게",
+             0.9, 0.5, {"ld_share": 0.85, "profile_sc": wave, "profile_lc": FLAT}),
+            ("ld_land", "적하 장치 육측 쪽", "적하 컨테이너가 육지 쪽 bay 에 몰려 있음 — 해측은 멀리 가야 하고 LC 는 가까워 돕기 쉬움",
+             0.9, 0.5, {"ld_share": 0.85, "ld_bay": "land"}),
+            ("ld_sea", "적하 장치 해측 쪽", "적하 컨테이너가 바다 쪽 bay 에 몰려 있음 — LC 가 돕기에 멀고 간섭이 잦음",
+             0.9, 0.5, {"ld_share": 0.85, "ld_bay": "sea"}),
+            ("lc_busy", "육측도 바쁨", "적하 85 % · 해측 0.9 에 육측도 0.85 — LC 가 도울 여유가 적은 대조군",
+             0.9, 0.85, {"ld_share": 0.85})]):
+        add("선박 패턴", key, label, desc, rs, rl, 2, 120000 + 1000 * n, **kw)
+    _CACHE[S] = out
+    return out
+
+
 def _profile_arrivals(n: int, weights: list[float], T: float, rng) -> list[float]:
     """상대 도착률(칸별)의 누적 분포에서 (k + u)/n 분위점 → n 개 도착 시각 (오름차순)."""
     import bisect
@@ -207,6 +275,14 @@ SETS = {
         "specs": specs_rolling10h,
         "T": T10H, "tag": "10h",
     },
+    "loading10h": {
+        "title": "적하 중심 세트 (10시간)",
+        "note": "선박으로 나가는 적하(LD) 컨테이너가 중심인 10시간 인스턴스. 적하 비중 18개(해측 작업의 70/85/100 % 가 적하 × 해측 부하 "
+                "0.7/0.9/1.05, 육측 0.5) + 적하 rehandle 강도 6개 + 선박 작업 패턴 12개(양하 후 적하, 선박 2척, 적하 웨이브, "
+                "적하 장치 위치 육측/해측, 육측도 바쁨). 육측(LC)이 적하 rehandle 을 얼마나 도울 수 있는지 보는 세트.",
+        "specs": specs_loading10h,
+        "T": T10H, "tag": "10h",
+    },
 }
 
 
@@ -221,9 +297,24 @@ def build(spec: dict, set_name: str | None = None) -> Instance:
     sc_gap = spec.get("job_sc", SC_JOB) / spec["rho_sc"]
     lc_gap = spec.get("job_lc", LC_JOB) / spec["rho_lc"]
     n_sc, n_lc = int(T // sc_gap), int(T // lc_gap)
-    kw.update(n_ds=n_sc // 2, n_ld=n_sc - n_sc // 2, n_gi=n_lc // 2, n_go=n_lc - n_lc // 2,
+    n_ld = n_sc - n_sc // 2 if "ld_share" not in spec else int(round(n_sc * spec["ld_share"]))
+    kw.update(n_ds=n_sc - n_ld, n_ld=n_ld, n_gi=n_lc // 2, n_go=n_lc - n_lc // 2,
               sc_gap=round(sc_gap, 1), lc_gap=round(lc_gap, 1), **gen)
     inst = generate(seed=spec["seed"], params=params, **kw)
+    order = spec.get("sc_order")
+    if order in ("ds_then_ld", "two_vessels"):
+        # 선박 작업 순서: 양하 먼저 → 적하 (2척이면 두 번). 도착 시각은 자리 순서대로 그대로 다시 매김
+        times = [j.a for j in inst.seq_sc]
+        ds = [j for j in inst.seq_sc if j.type == "DS"]
+        ld = [j for j in inst.seq_sc if j.type == "LD"]
+        if order == "ds_then_ld":
+            new = ds + ld
+        else:
+            hd, hl = len(ds) // 2, len(ld) // 2
+            new = ds[:hd] + ld[:hl] + ds[hd:] + ld[hl:]
+        for j, a in zip(new, times):
+            j.a = a
+        inst.seq_sc = new
     if "profile_sc" in spec:
         # 시간대별 도착률 → 크레인 순서대로 도착 시각 다시 매김
         rng = random.Random(spec["seed"] * 7 + 3)
@@ -282,6 +373,7 @@ def stats(inst: Instance) -> dict:
         "rh_ld": sum(j.r_c for j in inst.seq_sc if j.type == "LD"),
         "rh_go": sum(j.r_c for j in inst.seq_lc if j.type == "GO"),
         **out,
+        "ld_share": round(cnt.get("LD", 0) / max(1, cnt.get("LD", 0) + cnt.get("DS", 0)), 2),
         "hours": round(T / 3600, 1),
         "last_arrival_h": round(max(inst.ready(j) for j in inst.jobs()) / 3600, 2),
     }

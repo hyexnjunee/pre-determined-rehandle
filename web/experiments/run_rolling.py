@@ -138,7 +138,7 @@ def run(reg, name, inst, H, a, replan="event"):
            "delayed": met.get("delayed_in_execution"), "n_assisted": met.get("n_assisted"),
            "error": (r.error or "").strip().splitlines()[-1][:200] if r.error else ""}
     ld = go = pre = 0
-    agv = et = 0.0
+    agv = et = ldw = 0.0
     for e in r.schedule or []:
         if e.kind == "RH":
             typ = next((x.job_type for x in r.schedule if x.task == e.parent), "")
@@ -150,11 +150,13 @@ def run(reg, name, inst, H, a, replan="event"):
                 pre += e.end <= a_parent + 1e-6
         else:
             w = e.truck_out - e.ready
+            if e.job_type == "LD":
+                ldw += w
             if e.job_type in ("DS", "LD"):
                 agv += w
             else:
                 et += w
-    out.update(ld_assist=ld, go_assist=go, ld_pre=pre, agv_wait=round(agv, 1), et_wait=round(et, 1))
+    out.update(ld_assist=ld, go_assist=go, ld_pre=pre, agv_wait=round(agv, 1), et_wait=round(et, 1), ld_wait=round(ldw, 1))
     return out
 
 
@@ -314,6 +316,7 @@ def summarize(rows, methods):
             "ld_pre": mean([r["ld_pre"] for r in ok]),
             "rh_ld": mean([r["rh_ld"] for r in rs]), "rh_go": mean([r["rh_go"] for r in rs]),
             "agv_wait": mean([r["agv_wait"] for r in ok]), "et_wait": mean([r["et_wait"] for r in ok]),
+            "ld_wait": mean([r.get("ld_wait") or 0 for r in ok]),
             "replans": mean([r["replans"] for r in ok if r["replans"] is not None]),
             "sec": mean([r["sec"] for r in rs]),
         })
@@ -328,12 +331,12 @@ def report(summary, a):
               f"인스턴스 `{a.preset}` 프리셋 (DS,LD,GI,GO = {a.jobs or '프리셋'})") + f" · 목적함수 `{a.objective}` · 외부트럭 정보 = 도착 시 · AGV 정보 = 도착 H분 전"
              f" · 재계획 MIP {a.replan_time:g}s · 정적 MIP {a.mip_time:g}s"
              f" · 롤링 전체 제한 {a.rolling_total:g}s · 계획 범위 크레인별 {a.plan_jobs or '전부'}", "",
-             "| 조건 | H(분) | 투입 | 방법 | 풀림/n | 목적값 | 무지원 대비 % | 정보 손실 % | 적하 지원 | 반출 지원 | 미리 끝낸 적하 RH | RH(LD/GO) | AGV 대기 | ET 대기 | 재계획 | 시간 s |",
-             "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|"]
+             "| 조건 | H(분) | 투입 | 방법 | 풀림/n | 목적값 | 무지원 대비 % | 정보 손실 % | 적하 지원 | 반출 지원 | 미리 끝낸 적하 RH | RH(LD/GO) | AGV 대기 | 그중 적하 | ET 대기 | 재계획 | 시간 s |",
+             "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|"]
     for s in summary:
         lines.append(f"| {s['condition']} | {s['H']:g} | {s['replan'] if s['method'].startswith('roll') else '–'} | {s['method']} | {s['solved']}/{s['n']} | {f(s['objective'], 0)} | "
                      f"{f(s['gain_vs_nohelp_pct'])} | {f(s['voi_vs_full_pct'])} | {f(s['ld_assist'])} | {f(s['go_assist'])} | "
-                     f"{f(s['ld_pre'])} | {f(s['rh_ld'])}/{f(s['rh_go'])} | {f(s['agv_wait'], 0)} | {f(s['et_wait'], 0)} | "
+                     f"{f(s['ld_pre'])} | {f(s['rh_ld'])}/{f(s['rh_go'])} | {f(s['agv_wait'], 0)} | {f(s['ld_wait'], 0)} | {f(s['et_wait'], 0)} | "
                      f"{f(s['replans'])} | {f(s['sec'], 2)} |")
     lines += ["", "- 무지원 대비: 롤링 · 지원 없음 대비 트럭 대기 감소율 (+ 면 좋아짐)",
               "- 정보 손실: 같은 방법을 정보 다 아는 정적 문제로 풀었을 때보다 나빠진 비율 (roll_* ↔ full_*)",

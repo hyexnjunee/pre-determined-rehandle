@@ -224,10 +224,18 @@ python experiments/run_rolling.py --jobs "" --sc-gaps 800 --lc-gaps 900 --mip   
 표의 "가장 바쁜 1시간" = 1시간 창(15분씩 밀며)에 도착한 작업량 ÷ 1시간의 최댓값, "시간별 도착" = 시간마다 도착 수(파랑 SC · 주황 LC).
 부하 지도는 "평균 부하 / 가장 바쁜 1시간" 으로 바꿔 볼 수 있다.
 
+**적하 중심 세트** (`loading10h`, 10시간 · 36개): 선박으로 나가는 적하(LD) 컨테이너가 중심.
+적하 비중 18개(해측 작업의 70 / 85 / 100 % 가 적하 × 해측 부하 0.7 / 0.9 / 1.05, 육측 0.5 × 시드 2),
+적하 RH 6개(같은 선박에서 적하 rehandle 30 % · 70 % · 90 %×1~5개 — 해측 일이 그만큼 늘어남),
+선박 패턴 12개(양하 후 적하 · 선박 2척 · 적하 웨이브(3~6시간 몰림) · 적하 장치 육측 쪽 · 해측 쪽 · 육측도 바쁨).
+결과 요약 카드에 "적하(LD) 트럭 대기" 가 따로 나오고, `run_rolling.py` 보고서에도 "그중 적하" 열.
+생성기 옵션 `ld_bay` (uniform / sea / land) 추가 — 기본값이면 예전과 같은 인스턴스.
+
 ```bash
 python experiments/run_rolling.py --set rolling5h --agv-info 60                 # 세트 전체
 python experiments/run_rolling.py --set rolling5h --set-group 극단 --agv-info 0,60
 python experiments/run_rolling.py --set rolling10h --set-group 몰림 --agv-info 60 --workers 8
+python experiments/run_rolling.py --set loading10h --agv-info 0,30,60 --replan event,60 --workers 8
 python experiments/run_rolling.py --set rolling5h --agv-info 60 --replan event,15,30,60  # 작업 투입 간격 비교
 python experiments/run_rolling.py --set rolling5h --mip --workers 8 --threads 8          # 인스턴스 8개 동시 (서버)
 ```
@@ -271,7 +279,7 @@ web/
       rules.py             휴리스틱 공용 함수 (작업 분해 · 제약 검증 · 목적값). 2015 논문 기반 LonRem · RemReq · RH+LonRem 클래스도 남아 있으나 2026-10-19 비교 목록에서 뺌
       window_rule.py       Window–Slack 지원 규칙 휴리스틱
       rolling.py           롤링 호라이즌 (정보 공개 시점마다 재계획 · 확정 · 실행)
-    instance_sets.py       실험 인스턴스 세트 정의 (5시간: 균형 27 + 극단 16 · 10시간: 균형 18 + 대규모 6 + 몰림 20)
+    instance_sets.py       실험 인스턴스 세트 정의 (5시간: 균형 27 + 극단 16 · 10시간: 균형 18 + 대규모 6 + 몰림 20 · 적하 중심 10시간 36)
     nbchart.py             휴리스틱 결과를 노트북 시각화 셀로 그리기 (노트북 원본 차트 카드)
   experiments/run_experiments.py  비교 실험 일괄 실행 (소형 · 부하 격자 · 실데이터)
   experiments/run_rolling.py      롤링 호라이즌 실험 (AGV 정보 시간 H × 부하, --set 으로 실험 세트)

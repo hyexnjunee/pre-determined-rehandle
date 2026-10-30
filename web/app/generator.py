@@ -112,13 +112,14 @@ def generate(n_bay: int = 30, n_ds: int = 3, n_ld: int = 2, n_gi: int = 2, n_go:
              arrival_gap: float | None = None,
              rh_prob_go: float | None = None, rh_prob_ld: float | None = None,
              rh_dist: str = "uniform", arrival: str = "even", burst_size: int = 3,
-             go_bay: str = "uniform") -> Instance:
+             go_bay: str = "uniform", ld_bay: str = "uniform") -> Instance:
     """
     arrival : 트럭 도착 방식 (크레인 순서대로 도착, 평균 간격은 sc_gap / lc_gap 로 같음)
               "even"    일정 간격 k × gap (예전과 같음)
               "poisson" 간격이 평균 gap 인 지수분포 (무작위로 몰렸다 비었다)
               "burst"   burst_size 대씩 한꺼번에 도착, 묶음 간격 burst_size × gap
     go_bay  : GO 컨테이너가 있는 bay 분포 "uniform" | "sea" (바다 쪽에 몰림) | "land" (육지 쪽에 몰림)
+    ld_bay  : LD(적하) 컨테이너가 있는 bay 분포 — go_bay 와 같은 방식 (2026-10-30)
               sea: bay = 1 + ⌊(N−1)u²⌋, land: bay = N − ⌊(N−1)u²⌋ (u ~ U(0,1), 중앙값이 N/4 · 3N/4 부근)
     기본값(even, uniform)이면 같은 seed 에서 예전과 똑같은 인스턴스가 나온다.
     """
@@ -131,9 +132,10 @@ def generate(n_bay: int = 30, n_ds: int = 3, n_ld: int = 2, n_gi: int = 2, n_go:
     def make(prefix: str, count: int) -> list[Job]:
         out = []
         for k in range(1, count + 1):
-            if prefix == "GO" and go_bay in ("sea", "land"):
+            side = go_bay if prefix == "GO" else ld_bay if prefix == "LD" else "uniform"
+            if side in ("sea", "land"):
                 off = int((n_bay - 1) * rng.random() ** 2)
-                bay = 1 + off if go_bay == "sea" else n_bay - off
+                bay = 1 + off if side == "sea" else n_bay - off
             else:
                 bay = rng.randint(1, n_bay)
             rc, rh_d = 0, None
@@ -178,7 +180,8 @@ def generate(n_bay: int = 30, n_ds: int = 3, n_ld: int = 2, n_gi: int = 2, n_go:
               f"rh_max={rh_max}, move_prob={rh_move_prob}, span={rh_move_span}, "
               f"truck gap SC={sc_gap} LC={lc_gap}"
               + (f" ({arrival}" + (f", {burst_size}대씩" if arrival == "burst" else "") + ")" if arrival != "even" else "")
-              + (f", GO bay {go_bay}" if go_bay != "uniform" else "") + f", seed={seed}"),
+              + (f", GO bay {go_bay}" if go_bay != "uniform" else "")
+              + (f", LD bay {ld_bay}" if ld_bay != "uniform" else "") + f", seed={seed}"),
     )
 
 
