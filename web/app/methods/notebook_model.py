@@ -163,6 +163,28 @@ class NotebookModel(Method):
             "            _m.terminate()\n"
             "    except Exception:\n"
             "        pass")
+        ms = options.get("_mip_start")
+        if ms:
+            # 롤링 재계획용: 직전 계획을 초기해로 (지원 배정 x = MIP 시작해, 시작 시각 s = 힌트). 실패해도 풀이는 그대로
+            extra.append(
+                f"_MS = {ms!r}\n"
+                "try:\n"
+                "    _nh = 0\n"
+                "    for _k, _v in _MS.get('s', {}).items():\n"
+                "        if _k in s:\n"
+                "            s[_k].VarHintVal = _v\n"
+                "            _nh += 1\n"
+                "    _xv = globals().get('x')\n"
+                "    _nx = 0\n"
+                "    if _xv is not None:\n"
+                "        for _r, _c in _MS.get('x', []):\n"
+                "            for _cc in cand.get(_r, []):\n"
+                "                if (_r, _cc) in _xv:\n"
+                "                    _xv[_r, _cc].Start = 1.0 if _cc == _c else 0.0\n"
+                "            _nx += 1\n"
+                "    print(f'[rehandle-web] 직전 계획 초기해: 시각 힌트 {_nh}개, 지원 배정 {_nx}개')\n"
+                "except Exception as _e:\n"
+                "    print('[rehandle-web] 직전 계획 초기해를 넣지 못함:', _e)")
         if "model.optimize()" not in solve:
             raise KeyError("솔브 셀에서 model.optimize() 를 찾지 못했습니다.")
         solve = solve.replace("model.optimize()",

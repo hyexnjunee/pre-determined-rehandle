@@ -26,6 +26,7 @@ EN_TITLE = {
     "rolling_window_v2": "Rolling horizon: Window-Slack ver2 (AGV info H min ahead, ET at arrival)",
     "rolling_nohelp": "Rolling horizon: no assist",
     "rolling_coop": "Rolling horizon: cooperative MIP re-solved at each information event",
+    "rolling_baseline": "Rolling horizon: baseline MIP (no assist, rehandle in process time)",
     "assist_lonrem": "Heuristic: RH Insertion + LonRem",
     "lonrem": "Heuristic: LonRem (no assist, rehandle in process time)",
     "remreq": "Heuristic: RemReq (no assist, rehandle in process time)",

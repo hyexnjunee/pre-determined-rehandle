@@ -189,6 +189,69 @@ class RulesTests(unittest.TestCase):
                     rel=min(t for t in ts if t>=rev-1e-6)
                     self.assertGreaterEqual(e.start+1e-6,rel,(e.task,rev,rel))
 
+    def test_rolling_freeze_and_actual(self):
+        """작업 지시 동결: 끄면 동결 0, 켜면(시간 제한 없음) 동결이 생기고 제약 통과 · 실제 기록(meta.actual)이 있으면 대비 % 를 남김."""
+        from app.generator import LD_PRESET
+        from app.registry import build_registry
+        reg=build_registry(str(Path(__file__).resolve().parents[2]/"model"))
+        pre={k:v for k,v in LD_PRESET.items() if k not in ("params","note")}
+        seen=0
+        for seed in range(4):
+            inst=generate(seed=seed,params=Params(**LD_PRESET["params"]),**pre)
+            off=self.solve(reg["rolling_window_v2"],inst,objective="truck_wait",agv_info_min=60,freeze_tasks=0,draw_notebook_figure=False)
+            self.assertTrue(off.feasible,off.error); self.assertEqual(off.metrics["frozen_tasks"],0)
+            for w in (0,10):
+                on=self.solve(reg["rolling_window_v2"],inst,objective="truck_wait",agv_info_min=60,freeze_tasks=2,
+                              freeze_window_min=w,draw_notebook_figure=False)
+                self.assertTrue(on.feasible,(seed,w,on.error))
+                if w==0: seen+=on.metrics["frozen_tasks"]
+        self.assertGreater(seen,0)
+        inst.meta={"actual":{"truck_wait_sum":10000.0,"truck_wait_internal":4000.0,"truck_wait_external":6000.0,"makespan":9000.0}}
+        r=self.solve(reg["rolling_nohelp"],inst,objective="truck_wait",agv_info_min=60,draw_notebook_figure=False)
+        self.assertAlmostEqual(r.metrics["vs_actual_pct"],round(100*(r.metrics["truck_wait_sum"]-10000)/10000,2))
+
+    @unittest.skipUnless(MIP,"use --mip (Gurobi) for the rolling baseline MIP")
+    def test_rolling_baseline(self):
+        """롤링 비교군 MIP: 정보를 처음부터 다 주면 정적 비교군과 같은 값, rehandle 은 본 작업 안(RH 막대 없음 · 지원 없음),
+        AGV 60분 전 · 동결 켜도 비교군 노트북 제약 통과 (해를 비교군 노트북에 고정해 같은 목적값)."""
+        from app.generator import LD_PRESET
+        from app.registry import build_registry
+        import tempfile
+        nbdir=str(Path(__file__).resolve().parents[2]/"model")
+        reg=build_registry(nbdir)
+        pre={k:v for k,v in LD_PRESET.items() if k not in ("params","note")}
+        for seed in range(3):
+            inst=generate(seed=seed,params=Params(**LD_PRESET["params"]),**pre)
+            st=self.solve(reg["baseline"],inst,objective="truck_wait",draw_notebook_figure=False,time_limit=30,threads=2)
+            one=self.solve(reg["rolling_baseline"],inst,objective="truck_wait",agv_info_min=1e5,et_info_min=1e5,
+                           draw_notebook_figure=False,time_limit=30,threads=2)
+            self.assertEqual(one.metrics["replans"],1)
+            self.assertAlmostEqual(one.objective,st.objective,places=2)
+            for fr in (0,1):
+                r=self.solve(reg["rolling_baseline"],inst,objective="truck_wait",agv_info_min=60,freeze_tasks=fr,
+                             draw_notebook_figure=False,time_limit=10,threads=2)
+                self.assertTrue(r.feasible,(seed,fr,r.error))
+                self.assertFalse(any(e.kind=="RH" or e.assisted for e in r.schedule))
+                adapter=BaselineRehandle(nbdir)
+                opts=dict(objective="truck_wait",draw_notebook_figure=False,time_limit=10,threads=2)
+                with tempfile.NamedTemporaryFile(suffix=".log") as f,contextlib.redirect_stdout(io.StringIO()),contextlib.redirect_stderr(io.StringIO()):
+                    outcome=nbrunner.execute_cells(adapter.build_cells(inst,opts,f.name)[:-1])
+                    self.assertTrue(outcome.ok,outcome.error)
+                    ns=outcome.namespace; model=ns["model"]
+                    for e in r.schedule:
+                        ns["s"][e.task].LB=ns["s"][e.task].UB=e.start
+                    ns["makespan"].LB=ns["makespan"].UB=r.makespan
+                    model.Params.OutputFlag=0; model.Params.TimeLimit=10
+                    model.optimize()
+                    self.assertGreater(model.SolCount,0,(seed,fr,model.Status))
+                    self.assertAlmostEqual(model.ObjVal,r.objective,places=5)
+                    model.dispose()
+            # 직전 계획 초기해 · 동결을 켠 롤링 협업 MIP 도 제약 통과
+            r=self.solve(reg["rolling_coop"],inst,objective="truck_wait",agv_info_min=60,freeze_tasks=1,warm_start=True,
+                         draw_notebook_figure=False,time_limit=10,threads=2)
+            self.assertTrue(r.feasible,(seed,r.error))
+            self.assertGreater(r.metrics["warm_starts"],0)
+
     def test_instance_sets_10h(self):
         """10시간 세트: 균형 18 · 대규모 6 · 몰림 20, 도착은 10시간 안 · 크레인 순서대로, 평균 부하 목표 ± 0.04,
         몰림은 가장 바쁜 1시간 부하가 평균보다 확실히 큼, 대규모는 작업 200개 이상."""

@@ -1665,7 +1665,7 @@ function compareTableHTML(rs, act){
 }
 
 // 롤링 결과와 짝지을 정적(정보를 처음부터 다 아는) 결과
-const ROLL_PAIR = {rolling_coop: 'coop', rolling_window_v2: 'window_rule_v2'};
+const ROLL_PAIR = {rolling_coop: 'coop', rolling_window_v2: 'window_rule_v2', rolling_baseline: 'baseline'};
 function rollingCardsHTML(r, rs){
   const m = M(r), sched = r.schedule || [];
   const sgn = v => v==null ? '–' : (v>0?'−':v<0?'+':'')+Math.abs(v).toFixed(1)+'%';
@@ -1692,17 +1692,19 @@ function rollingCardsHTML(r, rs){
   let infoBox = '';
   if (st){
     const ms = M(st), stH = ms.ld_lookahead == null ? null : +ms.ld_lookahead;
-    const same = stH != null && Math.abs(stH - H) < 1 && ms.rh_after_arrival !== false;
+    // 비교군은 rehandle 을 본 작업 안에서 하므로 AGV 사전 정보 옵션과 무관 → 항상 같은 조건
+    const same = pk === 'baseline' || (stH != null && Math.abs(stH - H) < 1 && ms.rh_after_arrival !== false);
     const loss = ms.truck_wait_sum ? 100*(m.truck_wait_sum - ms.truck_wait_sum)/ms.truck_wait_sum : null;
     const gapNote = st.mip_gap != null && st.mip_gap > 0.001 ? ` · 정적 결과 gap ${(st.mip_gap*100).toFixed(0)}% (${esc(st.status)}) → 덜 풀린 해와 비교` : '';
     infoBox = `<div class="box"><div class="k">정보를 다 아는 정적 ${esc(st.label)} 대비</div>
       <div class="v ${loss==null?'':(loss>0.0001?'bad':(loss<-0.0001?'good':''))}">${loss==null?'–':(loss>0?'+':loss<0?'−':'')+Math.abs(loss).toFixed(1)+'%'}</div>
       <div class="sub">트럭 대기 ${fmt(ms.truck_wait_sum)} → ${fmt(m.truck_wait_sum)} · AGV ${fmt(ms.truck_wait_internal)} → ${fmt(m.truck_wait_internal)} · 외부 ${fmt(ms.truck_wait_external)} → ${fmt(m.truck_wait_external)}</div>
-      <div class="sub ${same?'':'warn'}">${same ? `조건 같음 (적하 RH 는 AGV 도착 ${(H/60).toFixed(0)}분 전부터) → + 면 정보를 늦게 알아 잃은 몫`
+      <div class="sub ${same?'':'warn'}">${same ? (pk === 'baseline' ? '조건 같음 (비교군은 rehandle 을 본 작업 안에서) → + 면 정보를 늦게 알아 잃은 몫' : `조건 같음 (적하 RH 는 AGV 도착 ${(H/60).toFixed(0)}분 전부터) → + 면 정보를 늦게 알아 잃은 몫`)
         : `⚠ 조건 다름: 정적은 ${stH==null?'AGV 사전 정보 끔 (적하 RH 도 도착 뒤)':`AGV ${(stH/60).toFixed(0)}분 전`}, 롤링은 ${(H/60).toFixed(0)}분 전 → 정보 손실로 해석 불가. 정적에 'AGV 도착 H분 전부터' 를 켜고 같은 H 로 돌리세요`}${gapNote}</div></div>`;
   } else if (pk) {
     infoBox = `<div class="box"><div class="k">정보를 다 아는 정적 결과 대비</div><div class="v">–</div>
-      <div class="sub">같은 실행에 정적 '${pk==='coop'?'협업 모델':'Window–Slack ver2'}' 를 'AGV 도착 ${(H/60).toFixed(0)}분 전부터' 옵션으로 함께 돌리면 정보 손실이 나옵니다</div></div>`;
+      <div class="sub">${pk==='baseline' ? "같은 실행에 정적 '비교군' 을 함께 돌리면 정보 손실이 나옵니다"
+        : `같은 실행에 정적 '${pk==='coop'?'협업 모델':'Window–Slack ver2'}' 를 'AGV 도착 ${(H/60).toFixed(0)}분 전부터' 옵션으로 함께 돌리면 정보 손실이 나옵니다`}</div></div>`;
   }
   const refBox = ref ? (() => { const g = pct(M(ref).truck_wait_sum, m.truck_wait_sum);
     return `<div class="box"><div class="k">롤링 · 지원 없음 대비 (지원 효과)</div><div class="v ${cls(g)}">${sgn(g)}</div>
@@ -1714,24 +1716,43 @@ function rollingCardsHTML(r, rs){
       <div class="sub">AGV ${(H/60).toFixed(0)}분 전 · 외부트럭 ${E ? (E/60).toFixed(0)+'분 전' : '도착 시'} 정보 공개 · 투입당 작업 ${avgAdd}개 · 다음 투입 전에 시작하는 작업만 확정</div></div>
     <div class="box"><div class="k">AGV 도착 전에 시작한 적하 rehandle</div>
       <div class="v">${pre.length} <span class="sub">/ ${ldRh}</span></div>
-      <div class="sub">${pre.length ? `도착 전 완료 ${nFull} · 평균 ${mins(lead)} 앞서 · 그중 LC 가 대신 ${preByLC}개` : 'AGV 사전 정보로 미리 한 적하 rehandle 없음'}</div></div>
+      <div class="sub">${m.rh_in_job ? '비교군: rehandle 은 본 작업 안에서 (미리 못 함 · 현재 운영)' : pre.length ? `도착 전 완료 ${nFull} · 평균 ${mins(lead)} 앞서 · 그중 LC 가 대신 ${preByLC}개` : 'AGV 사전 정보로 미리 한 적하 rehandle 없음'}</div></div>
     <div class="box"><div class="k">외부트럭 투입 대기 (다음 투입까지)</div>
       <div class="v">${mins(dAvg)}</div>
       <div class="sub">트럭 ${ets.length}대 합 ${fmt(dSum)} s${ext ? ` = 외부 트럭 대기의 ${(100*dSum/ext).toFixed(0)}%` : ''}${m.replan_mode === '일정 간격' ? '' : ' (새 정보마다 투입이면 0)'}</div></div>
     ${refBox}${infoBox}
     <div class="box"><div class="k">재계획 · 실행 보정</div>
       <div class="v" style="font-size:15px;margin-top:6px">재계획 ${m.replans??'–'}번 · ${fmt(m.inner_time)} s</div>
-      <div class="sub">${inner ? inner + ' · ' : ''}상대 크레인 간섭으로 계획보다 늦춘 작업 ${m.delayed_in_execution??0}개</div></div>
+      <div class="sub">${inner ? inner + ' · ' : ''}상대 크레인 간섭으로 계획보다 늦춘 작업 ${m.delayed_in_execution??0}개</div>
+      <div class="sub">${m.freeze_tasks ? `작업 지시 동결: 크레인별 다음 ${m.freeze_tasks}개${m.freeze_window_min ? ` (${m.freeze_window_min}분 안 시작)` : ''} · 동결로 확정 ${m.frozen_tasks??0}개` : '작업 지시 동결 끔'}${m.warm_start ? ` · 직전 계획 초기해 ${m.warm_starts??0}번` : ''}</div></div>
   </div>`;
 }
 
+// 롤링 비교군: 같은 정의로 계산한 실제 기록과 비교 (현재 운영을 얼마나 재현하는지)
+function rollBaseHTML(r){
+  const m = M(r), act = m.actual;
+  const sg = v => v==null ? '–' : (v>0?'+':v<0?'−':'')+Math.abs(v).toFixed(1)+'%';
+  if (!act || !act.truck_wait_sum) return `<div class="impr roll"><div class="box"><div class="k">현재 운영 재현 · 실제 기록 대비</div>
+      <div class="v">–</div><div class="sub">실데이터 구간이 아니라 실제 기록이 없습니다. '실데이터 가져오기' 로 만든 인스턴스에서 롤링 비교군을 돌리면 실제 트럭 대기와 비교합니다</div></div></div>`;
+  const v = m.vs_actual_pct, ok = v != null && Math.abs(v) <= 15;
+  return `<div class="impr roll"><div class="box"><div class="k">현재 운영 재현 · 실제 기록 대비</div>
+      <div class="v ${v==null?'':(ok?'good':'warn')}">${sg(v)}</div>
+      <div class="sub">트럭 대기 실제 ${fmt(act.truck_wait_sum)} → 롤링 비교군 ${fmt(m.truck_wait_sum)} · AGV ${fmt(act.truck_wait_internal)} → ${fmt(m.truck_wait_internal)} · 외부 ${fmt(act.truck_wait_external)} → ${fmt(m.truck_wait_external)}</div>
+      <div class="sub">0 에 가까울수록 현재 운영을 잘 재현 (실제 기록에는 AH·MI 등 모델 밖 작업도 섞여 있어 참고용)</div></div></div>`;
+}
+
 function improvementHTML(rs){
-  const base = rs.find(r => r.method==='baseline' && r.makespan!=null);
+  const sbase = rs.find(r => r.method==='baseline' && r.makespan!=null);
+  const rbase = rs.find(r => r.method==='rolling_baseline' && r.makespan!=null);
   const others = rs.filter(r => r.method!=='baseline' && r.makespan!=null);
-  if (!others.length || (!base && !others.some(r => M(r).rolling))) return '';
+  if (!others.length || (!sbase && !others.some(r => M(r).rolling))) return '';
   return others.map(r => {
     const head = `<div class="impr-h">${esc(r.label)}${M(r).rolling ? ' <span class="tag">롤링</span>' : ''}</div>`;
     const roll = M(r).rolling ? rollingCardsHTML(r, rs) : '';
+    if (r.method==='rolling_baseline') return head + rollBaseHTML(r) + roll;
+    // 롤링 방법은 같은 정보 조건의 롤링 비교군과, 정적 방법은 정적 비교군과 비교
+    const base = (M(r).rolling && rbase) ? rbase : sbase;
+    const bname = (M(r).rolling && rbase) ? '롤링 비교군' : '비교군';
     if (!base) return head + roll;
     const dm = pct(base.makespan, r.makespan), dt = pct(M(base).truck_wait_sum, M(r).truck_wait_sum);
     const di = pct(M(base).truck_wait_internal, M(r).truck_wait_internal), de = pct(M(base).truck_wait_external, M(r).truck_wait_external);
@@ -1740,10 +1761,10 @@ function improvementHTML(rs){
     const scB = (M(base).busy_time_per_crane||{}).SC, scR = (M(r).busy_time_per_crane||{}).SC;
     const lcB = (M(base).busy_time_per_crane||{}).LC, lcR = (M(r).busy_time_per_crane||{}).LC;
     return head + `<div class="impr">
-      <div class="box"><div class="k">makespan (비교군 대비)</div>
+      <div class="box"><div class="k">makespan (${bname} 대비)</div>
         <div class="v ${cls(dm)}">${sgn(dm)}</div>
         <div class="sub">${fmt(base.makespan)} → ${fmt(r.makespan)}</div></div>
-      <div class="box"><div class="k">Σ 트럭 대기 (전체)</div>
+      <div class="box"><div class="k">Σ 트럭 대기 (전체, ${bname} 대비)</div>
         <div class="v ${cls(dt)}">${sgn(dt)}</div>
         <div class="sub">${fmt(M(base).truck_wait_sum)} → ${fmt(M(r).truck_wait_sum)}</div></div>
       <div class="box"><div class="k">내부 트럭 DS·LD / 외부 트럭 GI·GO</div>

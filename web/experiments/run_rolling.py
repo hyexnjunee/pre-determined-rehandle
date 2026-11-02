@@ -13,15 +13,23 @@
     다음 투입 전에 시작하는 작업만 확정
 
 방법 (--methods)
+  roll_base     롤링 · 비교군 MIP (현재 운영: 지원 없음, rehandle 은 본 작업 안)   [--mip]
   roll_nohelp   롤링 · 지원 없음 (rehandle 은 원래 크레인이) ← 기준
   roll_v2       롤링 · Window–Slack ver2
   roll_coop     롤링 · 협업 MIP (재계획마다 --replan-time 초)            [--mip]
   full_nohelp   정보 다 아는 정적 · 지원 없음
   full_v2       정보 다 아는 정적 · Window–Slack ver2 (같은 H 규칙)
   full_coop     정보 다 아는 정적 · 협업 MIP (같은 H 규칙) = 상한(최선)   [--mip]
+  full_base     정보 다 아는 정적 · 비교군 MIP                              [--mip]
+
+현실적인 세팅 (2026-11-02): 롤링은 기본 '새 정보마다' 재계획 + 작업 지시 동결(--freeze 1, --freeze-window 5분)
+  + MIP 는 직전 계획을 초기해로(--no-warm-start 로 끔). --mip-only 면 MIP 네 가지(roll_base · roll_coop · full_base · full_coop)만.
+  실데이터 인스턴스(--instance-files 'data/instances/*.json', 웹 '실데이터 가져오기' 로 저장한 것)는 실제 기록 대비 % 도 남김
 
 지표
   gain_vs_nohelp  (롤링 무지원 − 방법) / 롤링 무지원 × 100    지원으로 줄어든 트럭 대기
+  gain_vs_rollbase (롤링 비교군 − 방법) / 롤링 비교군 × 100   같은 정보 조건의 현재 운영 대비
+  vs_actual       (방법 트럭 대기 − 실제 기록) / 실제 기록 × 100 (실데이터 인스턴스만, 롤링 비교군이 0 에 가까울수록 현재 운영 재현)
   voi_vs_full     (방법 − 같은 계열 정적) / 정적 × 100        정보를 늦게 알아 잃은 몫 (roll_* ↔ full_*)
   ld_assist, go_assist   반대편 크레인이 대신 한 적하 / 반출 rehandle 수
   ld_pre         AGV 도착 전에 끝낸 적하 rehandle 수 (미리 해둔 것)
@@ -35,6 +43,8 @@
   python experiments/run_rolling.py --set rolling5h --mip --workers 16 --threads 8         # 연구실 서버 (128코어)
   python experiments/run_rolling.py --seeds 20 --jobs 8,12,8,8 --sc-gaps 584,400,300 --lc-gaps 739,400
   python experiments/run_rolling.py --seeds 10 --agv-info 60 --sc-gaps 584,400,300 --mip --replan-time 10
+  python experiments/run_rolling.py --set rolling5h --agv-info 60 --mip-only --workers 16 --threads 4      # MIP 세 가지 비교
+  python experiments/run_rolling.py --instance-files 'data/instances/*.json' --agv-info 60 --mip-only     # 실데이터 · 실제 기록 대비
 """
 
 from __future__ import annotations
@@ -59,10 +69,12 @@ from app import generator                       # noqa: E402
 from app.schema import Params                   # noqa: E402
 from app.registry import build_registry, default_notebook_dir   # noqa: E402
 
-ALL = ["roll_nohelp", "roll_v2", "roll_coop", "full_nohelp", "full_v2", "full_coop"]
-KEY = {"roll_nohelp": "rolling_nohelp", "roll_v2": "rolling_window_v2", "roll_coop": "rolling_coop",
+ALL = ["roll_base", "roll_nohelp", "roll_v2", "roll_coop", "full_base", "full_nohelp", "full_v2", "full_coop"]
+KEY = {"roll_base": "rolling_baseline", "roll_nohelp": "rolling_nohelp", "roll_v2": "rolling_window_v2",
+       "roll_coop": "rolling_coop", "full_base": "baseline",
        "full_nohelp": "window_rule_v2", "full_v2": "window_rule_v2", "full_coop": "coop"}
-PAIR = {"roll_nohelp": "full_nohelp", "roll_v2": "full_v2", "roll_coop": "full_coop"}
+PAIR = {"roll_base": "full_base", "roll_nohelp": "full_nohelp", "roll_v2": "full_v2", "roll_coop": "full_coop"}
+MIP_ONLY = ["roll_base", "roll_coop", "full_base", "full_coop"]
 
 
 def floats(s):
@@ -74,6 +86,17 @@ def strs(s):
 
 
 def instances(a):
+    if a.instance_files:
+        import glob
+        from app.schema import Instance
+        for path in sorted(glob.glob(a.instance_files)):
+            with open(path, encoding="utf-8") as f:
+                inst = Instance.from_dict(json.load(f))
+            if inst.num_jobs():
+                act = (inst.meta or {}).get("actual") or {}
+                yield {"cond": inst.name, "file": os.path.basename(path),
+                       "actual_wait": act.get("truck_wait_sum")}, inst
+        return
     if a.set:
         from app.instance_sets import load_set
         d = load_set(a.set, os.path.join(WEB, "data"))
@@ -120,14 +143,15 @@ def run(reg, name, inst, H, a, replan="event"):
     if name.startswith("roll"):
         opt["agv_info_min"] = H
         opt.update(replan_opts(replan))
-        opt.update(total_time_limit=a.rolling_total, plan_jobs_max=a.plan_jobs)
-        if name == "roll_coop":
+        opt.update(total_time_limit=a.rolling_total, plan_jobs_max=a.plan_jobs,
+                   freeze_tasks=a.freeze, freeze_window_min=a.freeze_window, warm_start=not a.no_warm_start)
+        if name in ("roll_coop", "roll_base"):
             opt.update(time_limit=a.replan_time, threads=a.threads, mip_gap=0.0)
     else:
         opt.update(rh_after_arrival=True, ld_known=True, ld_lookahead_min=H)
         if name == "full_nohelp":
             opt.update(help_go=False, help_ld=False, gap_search=False, recheck=False)
-        if name == "full_coop":
+        if name in ("full_coop", "full_base"):
             opt.update(time_limit=a.mip_time, threads=a.threads, mip_gap=0.0)
     t = time.time()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
@@ -135,7 +159,8 @@ def run(reg, name, inst, H, a, replan="event"):
     met = r.metrics or {}
     out = {"method": name, "status": r.status, "objective": r.objective if r.feasible else None,
            "sec": round(time.time() - t, 3), "replans": met.get("replans"),
-           "delayed": met.get("delayed_in_execution"), "n_assisted": met.get("n_assisted"),
+           "delayed": met.get("delayed_in_execution"), "frozen": met.get("frozen_tasks"),
+           "n_assisted": met.get("n_assisted"), "gap": r.mip_gap,
            "error": (r.error or "").strip().splitlines()[-1][:200] if r.error else ""}
     ld = go = pre = 0
     agv = et = ldw = 0.0
@@ -156,7 +181,8 @@ def run(reg, name, inst, H, a, replan="event"):
                 agv += w
             else:
                 et += w
-    out.update(ld_assist=ld, go_assist=go, ld_pre=pre, agv_wait=round(agv, 1), et_wait=round(et, 1), ld_wait=round(ldw, 1))
+    out.update(ld_assist=ld, go_assist=go, ld_pre=pre, agv_wait=round(agv, 1), et_wait=round(et, 1), ld_wait=round(ldw, 1),
+               wait_sum=round(agv + et, 1) if r.feasible else None)
     return out
 
 
@@ -168,6 +194,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--methods", default=None, help="쉼표 구분. 기본: roll_nohelp,roll_v2,full_v2 (+ --mip 이면 roll_coop,full_coop)")
     ap.add_argument("--mip", action="store_true")
+    ap.add_argument("--mip-only", action="store_true", help="MIP 네 가지만: 롤링 비교군 · 롤링 협업 · 정적 비교군 · 정적 협업")
+    ap.add_argument("--instance-files", default="", help="저장한 인스턴스 JSON (glob). 실데이터면 실제 기록 대비 % 도 계산")
+    ap.add_argument("--freeze", type=int, default=1, help="작업 지시 동결: 재계획 때 크레인별로 더 확정할 작업 수 (0 = 끔)")
+    ap.add_argument("--freeze-window", type=float, default=5, help="동결은 이 시간(분) 안에 시작할 작업만 (0 = 제한 없음)")
+    ap.add_argument("--no-warm-start", action="store_true", help="롤링 MIP 에서 직전 계획을 초기해로 쓰지 않음")
     ap.add_argument("--replan", default="event",
                     help="작업 투입(재계획) 방식 목록: event = 새 정보마다, 숫자 = 그 분 간격 (예: event,15,30,60)")
     ap.add_argument("--agv-info", default="0,30,60,120", help="AGV 정보를 미리 아는 시간 H (분) 목록")
@@ -197,8 +228,8 @@ def main():
     ap.add_argument("--out", default=os.path.join(HERE, "out", "rolling_" + datetime.now().strftime("%Y%m%d_%H%M%S")))
     a = ap.parse_args()
 
-    methods = strs(a.methods) if a.methods else (
-        ["roll_nohelp", "roll_v2", "full_nohelp", "full_v2"] + (["roll_coop", "full_coop"] if a.mip else []))
+    methods = strs(a.methods) if a.methods else (MIP_ONLY if a.mip_only else (
+        ["roll_nohelp", "roll_v2", "full_nohelp", "full_v2"] + (["roll_base", "roll_coop", "full_base", "full_coop"] if a.mip else [])))
     bad = [m for m in methods if m not in ALL]
     if bad:
         sys.exit(f"알 수 없는 방법: {bad} (가능: {ALL})")
@@ -209,7 +240,7 @@ def main():
 
     items = []
     for n, (info, inst) in enumerate(instances(a), 1):
-        iid = info.get("set_id") or f"roll_{n:04d}"
+        iid = info.get("set_id") or (os.path.splitext(info["file"])[0] if info.get("file") else f"roll_{n:04d}")
         with open(os.path.join(a.out, "instances", iid + ".json"), "w", encoding="utf-8") as f:
             json.dump(inst.to_dict(), f, ensure_ascii=False)
         items.append((n, iid, info, inst))
@@ -262,11 +293,15 @@ def process_instance(reg, a, methods, iid, info, inst):
         for rp in strs(a.replan):
             res = {m: (static[m] if m in static else run(reg, m, inst, H, a, rp)) for m in methods}
             base = res.get("roll_nohelp")
+            rbase = res.get("roll_base")
+            act = ((inst.meta or {}).get("actual") or {}).get("truck_wait_sum")
             for m, r in res.items():
                 full = res.get(PAIR.get(m, ""))
                 rows.append({"instance": iid, **info, "H": H, "replan": replan_label(rp),
                              "jobs": inst.num_jobs(), "rh_ld": n_ld, "rh_go": n_go,
                              **r, "gain_vs_nohelp": pct(base and base["objective"], r["objective"]),
+                             "gain_vs_rollbase": pct(rbase and rbase["objective"], r["objective"]),
+                             "vs_actual": (100.0 * (r["wait_sum"] - act) / act if act and r.get("wait_sum") is not None else None),
                              "voi_vs_full": (-pct(full["objective"], r["objective"])
                                              if full and full["objective"] and r["objective"] is not None else None)})
             line = " · ".join(f"{m} {res[m]['objective']:.0f}" if res[m]["objective"] is not None
@@ -311,6 +346,9 @@ def summarize(rows, methods):
             "condition": cond, "H": H, "replan": rp, "method": m, "n": len(rs), "solved": len(ok),
             "objective": mean([r["objective"] for r in ok]),
             "gain_vs_nohelp_pct": mean([r["gain_vs_nohelp"] for r in ok if r["gain_vs_nohelp"] is not None]),
+            "gain_vs_rollbase_pct": mean([r["gain_vs_rollbase"] for r in ok if r.get("gain_vs_rollbase") is not None]),
+            "vs_actual_pct": mean([r["vs_actual"] for r in ok if r.get("vs_actual") is not None]),
+            "frozen": mean([r["frozen"] for r in ok if r.get("frozen") is not None]),
             "voi_vs_full_pct": mean([r["voi_vs_full"] for r in ok if r["voi_vs_full"] is not None]),
             "ld_assist": mean([r["ld_assist"] for r in ok]), "go_assist": mean([r["go_assist"] for r in ok]),
             "ld_pre": mean([r["ld_pre"] for r in ok]),
@@ -327,18 +365,24 @@ def summarize(rows, methods):
 def report(summary, a):
     f = lambda v, d=1: "–" if v is None else f"{v:.{d}f}"
     lines = [f"# 롤링 호라이즌 실험 ({datetime.now():%Y-%m-%d %H:%M})", "",
-             (f"인스턴스 세트 `{a.set}`" + (f" ({a.set_group})" if a.set_group else "") if a.set else
+             (f"인스턴스 파일 `{a.instance_files}`" if a.instance_files else
+              f"인스턴스 세트 `{a.set}`" + (f" ({a.set_group})" if a.set_group else "") if a.set else
               f"인스턴스 `{a.preset}` 프리셋 (DS,LD,GI,GO = {a.jobs or '프리셋'})") + f" · 목적함수 `{a.objective}` · 외부트럭 정보 = 도착 시 · AGV 정보 = 도착 H분 전"
              f" · 재계획 MIP {a.replan_time:g}s · 정적 MIP {a.mip_time:g}s"
-             f" · 롤링 전체 제한 {a.rolling_total:g}s · 계획 범위 크레인별 {a.plan_jobs or '전부'}", "",
-             "| 조건 | H(분) | 투입 | 방법 | 풀림/n | 목적값 | 무지원 대비 % | 정보 손실 % | 적하 지원 | 반출 지원 | 미리 끝낸 적하 RH | RH(LD/GO) | AGV 대기 | 그중 적하 | ET 대기 | 재계획 | 시간 s |",
-             "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|"]
+             f" · 롤링 전체 제한 {a.rolling_total:g}s · 계획 범위 크레인별 {a.plan_jobs or '전부'}"
+             f" · 작업 지시 동결 {a.freeze}개" + (f" ({a.freeze_window:g}분 안)" if a.freeze and a.freeze_window else "")
+             + f" · 직전 계획 초기해 {'끔' if a.no_warm_start else '켬'}", "",
+             "| 조건 | H(분) | 투입 | 방법 | 풀림/n | 목적값 | 롤링 비교군 대비 % | 무지원 대비 % | 정보 손실 % | 실제 기록 대비 % | 적하 지원 | 반출 지원 | 미리 끝낸 적하 RH | RH(LD/GO) | AGV 대기 | 그중 적하 | ET 대기 | 재계획 | 동결 | 시간 s |",
+             "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|"]
     for s in summary:
         lines.append(f"| {s['condition']} | {s['H']:g} | {s['replan'] if s['method'].startswith('roll') else '–'} | {s['method']} | {s['solved']}/{s['n']} | {f(s['objective'], 0)} | "
-                     f"{f(s['gain_vs_nohelp_pct'])} | {f(s['voi_vs_full_pct'])} | {f(s['ld_assist'])} | {f(s['go_assist'])} | "
+                     f"{f(s['gain_vs_rollbase_pct'])} | {f(s['gain_vs_nohelp_pct'])} | {f(s['voi_vs_full_pct'])} | {f(s['vs_actual_pct'])} | "
+                     f"{f(s['ld_assist'])} | {f(s['go_assist'])} | "
                      f"{f(s['ld_pre'])} | {f(s['rh_ld'])}/{f(s['rh_go'])} | {f(s['agv_wait'], 0)} | {f(s['ld_wait'], 0)} | {f(s['et_wait'], 0)} | "
-                     f"{f(s['replans'])} | {f(s['sec'], 2)} |")
-    lines += ["", "- 무지원 대비: 롤링 · 지원 없음 대비 트럭 대기 감소율 (+ 면 좋아짐)",
+                     f"{f(s['replans'])} | {f(s['frozen'])} | {f(s['sec'], 2)} |")
+    lines += ["", "- 롤링 비교군 대비: 같은 정보 조건(AGV H분 전 · 외부트럭 도착 시)에서 현재 운영(지원 없음, rehandle 은 본 작업 안)을 롤링으로 푼 값 대비 감소율 (+ 면 좋아짐)",
+              "- 실제 기록 대비: 실데이터 인스턴스만. (트럭 대기 합 − 실제) / 실제. 롤링 비교군이 0 에 가까우면 현재 운영을 잘 재현",
+              "- 무지원 대비: 롤링 · 지원 없음 대비 트럭 대기 감소율 (+ 면 좋아짐)",
               "- 정보 손실: 같은 방법을 정보 다 아는 정적 문제로 풀었을 때보다 나빠진 비율 (roll_* ↔ full_*)",
               "- 미리 끝낸 적하 RH: AGV 가 도착하기 전에 끝난 적하 rehandle 수 (H 가 클수록 늘어야 함)",
               "- 목적값 평균은 풀린 인스턴스만 (협업 MIP 가 실패한 인스턴스가 있으면 방법끼리 직접 비교하지 말고 % 지표를 볼 것)",

@@ -17,9 +17,16 @@
   - 크레인 상태: 마지막으로 확정한 작업이 끝나는 시각(ready)과 그 위치에서 출발
   - 이미 확정된 rehandle 이 아직 진행 중이면, 그 본 작업은 rehandle 이 끝난 뒤에만 시작 (release 로 반영)
 
-한 시점의 계획은 안쪽 방법(창 규칙 v2 · 협업 MIP · 지원 없음)으로 푼다. 계획에는 상대 크레인의 진행 중 작업이
+한 시점의 계획은 안쪽 방법(창 규칙 v2 · 협업 MIP · 지원 없음 · 비교군 MIP)으로 푼다. 계획에는 상대 크레인의 진행 중 작업이
 크레인 위치 · 비는 시각으로만 들어간다(근사). 대신 확정된 작업은 '실행' 단계에서 계획 순서대로 수행하며
 상대 크레인과의 간섭(ETD)이 있으면 그만큼 늦춘다 → 최종 스케줄은 항상 노트북 제약을 지킨다(끝에서 다시 검사).
+
+현실적인 운영 세팅 (2026-11-02)
+  - 롤링 비교군 MIP: 같은 정보 조건에서 현재 운영(지원 없음, rehandle 은 본 작업 처리시간 안)을 비교군 노트북으로 재계획.
+    실데이터 구간이면 같은 정의로 계산한 실제 기록 트럭 대기(meta.actual)와 비교해 '현재 운영 재현' 정도를 남긴다
+  - 작업 지시 동결: 재계획 때 다음 정보 전에 시작하는 작업에 더해, 크레인별로 다음 k개(기본 1) 작업도 확정한다
+    (작업 지시가 내려간 작업은 바꾸지 않음). 그 작업에 필요한 선행 작업(같은 크레인 앞 작업 · 앞 rehandle)도 함께 확정
+  - 이전 계획 초기해: 안쪽이 MIP 면 직전 계획의 지원 배정(x)을 MIP 시작해로, 시작 시각을 힌트로 준다
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ import time
 from ..schema import Instance, Job, Block, validate
 from .. import nbrunner, livelog
 from .base import Method, ScheduleEntry
+from .notebook_model import NotebookModel
 from .rules import EPS, tasks_of, verify, objective, init_pos, first_start, conflict, etd
 
 AGV_TYPES = ("DS", "LD")
@@ -57,20 +65,29 @@ class RollingMethod(Method):
         self.inner = inner
         self.inner_fixed = dict(inner_fixed or {})
         self.description = description
-        self.paper = "롤링 호라이즌 · 외부트럭은 도착 시, AGV 는 H분 전 정보 공개 · 새 정보마다 또는 일정 간격(예: 30분)으로 작업 투입·재계획"
+        # 비교군 노트북처럼 rehandle 을 본 작업 처리시간에 넣는 안쪽 방법이면 split=False
+        self.split = bool(getattr(inner, "split", True))
+        self.mip = isinstance(inner, NotebookModel)
+        self.paper = "롤링 호라이즌 · 외부트럭은 도착 시, AGV 는 H분 전 정보 공개 · 새 정보마다 재계획(기본) · 작업 지시 동결"
         hidden = {"ld_known", "ld_lookahead_min", "rh_after_arrival", "draw_notebook_figure"} | set(self.inner_fixed)
         inner_opts = {k: v for k, v in (inner.options or {}).items() if k not in hidden}
         if "time_limit" in inner_opts:
             inner_opts["time_limit"] = dict(inner_opts["time_limit"], label="재계획 1회 제한 (s)",
-                                            default=min(30, inner_opts["time_limit"].get("default", 30)))
+                                            default=min(10, inner_opts["time_limit"].get("default", 10)))
         self.options = {
             "agv_info_min": {"type": "number", "default": 60, "label": "AGV 정보를 미리 아는 시간 H (분)"},
             "et_info_min": {"type": "number", "default": 0,
                             "label": "외부트럭 정보를 미리 아는 시간 (분, 0 = 도착해야 앎 · rehandle 은 어쨌든 도착 뒤)"},
             "replan_mode": {"type": "select", "choices": ["새 정보마다", "일정 간격"], "default": "새 정보마다",
-                            "label": "작업 투입(재계획) 방식"},
+                            "label": "작업 투입(재계획) 방식 — 새 정보마다 = 트럭이 오면 바로 배정 (현실 운영)"},
             "replan_interval_min": {"type": "number", "default": 30,
-                                    "label": "일정 간격일 때 투입 간격 (분, 첫 작업 시각부터)"},
+                                    "label": "일정 간격일 때 투입 간격 (분, 첫 작업 시각부터 · 비교용)"},
+            "freeze_tasks": {"type": "number", "default": 1,
+                             "label": "작업 지시 동결: 재계획 때 크레인별로 다음 몇 개 작업을 더 확정 (0 = 끔)"},
+            "freeze_window_min": {"type": "number", "default": 5,
+                                  "label": "동결은 이 시간 안에 시작할 작업만 (분, 0 = 제한 없음)"},
+            **({"warm_start": {"type": "checkbox", "default": True,
+                               "label": "직전 계획을 MIP 초기해로 (지원 배정 시작해 · 시작 시각 힌트)"}} if self.mip else {}),
             **inner_opts,
             "total_time_limit": {"type": "number", "default": 900,
                                  "label": "롤링 전체 제한 (s, 0 = 없음) — 넘으면 남은 재계획은 빠른 규칙으로 마무리"},
@@ -99,10 +116,15 @@ class RollingMethod(Method):
         total = max(0.0, float(options.get("total_time_limit", 900) or 0))
         plan_max = max(0, int(float(options.get("plan_jobs_max", 12) or 0)))
         E = max(0.0, float(options.get("et_info_min", 0) or 0)) * 60.0
+        freeze = max(0, int(float(options.get("freeze_tasks", 1) or 0)))
+        fwin = max(0.0, float(options.get("freeze_window_min", 5) or 0)) * 60.0
+        warm = self.mip and bool(options.get("warm_start", True))
+        split = self.split
         p = inst.params
         inner_opt = {k: v for k, v in options.items()
                      if k not in ("agv_info_min", "et_info_min", "replan_gap", "replan_mode", "replan_interval_min",
-                                  "total_time_limit", "plan_jobs_max", "draw_notebook_figure")}
+                                  "total_time_limit", "plan_jobs_max", "draw_notebook_figure", "freeze_tasks", "freeze_window_min",
+                                  "warm_start", "_mip_start")}
         inner_opt.update(self.inner_fixed)
         inner_opt.update(rh_after_arrival=True, ld_known=True, ld_lookahead_min=H / 60.0,
                          draw_notebook_figure=False, objective=name)
@@ -139,7 +161,8 @@ class RollingMethod(Method):
             prev = t
 
         # 전체 작업 (원래 시각) — 실행 시뮬레이션 · 최종 검사에 쓴다
-        tasks, _, prec = tasks_of(inst, True, True, H)
+        # (비교군 MIP 처럼 split=False 면 rehandle 은 본 작업 처리시간 안 → 따로 미리 할 수 없음)
+        tasks, _, prec = tasks_of(inst, split, True, H if split else None)
         preds = {k: set() for k in tasks}
         for x, y in prec:
             preds[y].add(x)
@@ -148,6 +171,8 @@ class RollingMethod(Method):
         order: list[str] = []
         rh_done = {jid: 0 for jid in jobs}       # 확정된 rehandle 개수 (위에서부터)
         n_solves, inner_time, n_push, n_delay, n_fallback = 0, 0.0, 0, 0, 0
+        n_frozen, n_warm = 0, 0
+        last_plan: dict[str, tuple[float, str]] = {}   # 직전 계획: 작업(전체 id) → (시작 시각, 크레인)
         status_inner = []
 
         def execute(plan: list[tuple[float, str, str]], t_dec: float):
@@ -194,14 +219,14 @@ class RollingMethod(Method):
         # 다 쓰면 남은 재계획은 빠른 방법(창 규칙 v2 1초, 안 되면 지원 없는 디코더)으로 마무리한다
         tl_user = float(options.get("time_limit", inner_opt.get("time_limit", 30)) or 30)
         fast = None
-        if self.inner.key != "window_rule_v2":
+        if split and self.inner.key != "window_rule_v2":   # 비교군(split=False)은 같은 MIP 1초 → 안 되면 지원 없는 디코더
             from .window_rule import WindowRuleV2
             fast = WindowRuleV2()
         n_fast, n_trunc, log_every = 0, 0, max(1, len(epochs) // 40)
 
-        def plan_once(ei, t, t_next):
+        def plan_once(ei, t, t_next, freeze_now=0):
             """시점 t 에서 한 번 계획하고 확정. 반환: (확정한 작업 수, 잘림 여부) — 실패 시 예외"""
-            nonlocal n_solves, inner_time, n_push, n_fallback, n_fast, n_trunc
+            nonlocal n_solves, inner_time, n_push, n_fallback, n_fast, n_trunc, n_frozen, n_warm
             sub_seq, truncated = {}, False
             for c in ("SC", "LC"):
                 lst = []
@@ -256,6 +281,21 @@ class RollingMethod(Method):
             # 이번 재계획에 줄 시간
             left = total - (time.perf_counter() - t0) if total else None
             method, opt = self.inner, dict(inner_opt)
+            # 직전 계획을 MIP 초기해로: 지원 배정(x) = 시작해, 시작 시각(s) = 힌트. 새로 공개된 작업은 비워 둔다
+            if warm and last_plan:
+                ms_s, ms_x = {}, []
+                for jlist in (sub.seq_sc, sub.seq_lc):
+                    for sj in jlist:
+                        if sj.id in last_plan:
+                            ms_s[sj.id] = round(max(0.0, last_plan[sj.id][0] - t), 6)
+                        for k in range(1, sj.r_c + 1):
+                            g = f"{sj.id}_r{k + offset[sj.id]}"
+                            if g in last_plan:
+                                ms_s[f"{sj.id}_r{k}"] = round(max(0.0, last_plan[g][0] - t), 6)
+                                ms_x.append((f"{sj.id}_r{k}", last_plan[g][1]))
+                if ms_s:
+                    opt["_mip_start"] = {"s": ms_s, "x": ms_x}
+                    n_warm += 1
             if left is not None:
                 share = 2.0 * left / max(1, len(epochs) - ei)       # 남은 시간을 남은 투입 수로 (넉넉히 2배)
                 opt["time_limit"] = max(1.0, min(tl_user, share))
@@ -282,27 +322,55 @@ class RollingMethod(Method):
                 planned = [(e.start, e.task, e.crane, e.kind) for e in r.schedule]
             else:
                 # 안쪽 방법이 못 푸는 부분 문제(아주 작거나 · 라이선스 크기 제한 등)는 지원 없이 같은 디코더로 시각만
-                planned = _fallback_plan(sub, H, name)
+                planned = _fallback_plan(sub, H, name, split)
                 if planned is None:
                     raise RuntimeError(f"t={t:.0f} 재계획 실패 ({r.status}): {r.error or ''}"[:500])
                 n_fallback += 1
-            # 다음 정보 전에 시작하는 작업만 확정 → 실제 수행
-            plan = []
+            # 계획을 원래 시각 · 전체 작업 id 로
+            gplan = []
             for e_start, e_task, e_crane, e_kind in planned:
-                st = e_start + t
-                if st >= t_next - EPS:
-                    continue
                 tid = e_task
                 if e_kind == "RH":
                     jid, k = e_task.rsplit("_r", 1)
-                    kk = int(k) + offset[jid]
-                    tid = f"{jid}_r{kk}"
-                    rh_done[jid] = max(rh_done[jid], kk)
-                plan.append((st, tid, e_crane))
+                    tid = f"{jid}_r{int(k) + offset[jid]}"
+                gplan.append((e_start + t, tid, e_crane))
+            last_plan.clear()
+            last_plan.update({tid: (st, c) for st, tid, c in gplan})
+            # 확정: 다음 정보 전에 시작하는 작업 + (동결) 크레인별 다음 freeze_now 개와 그 선행 작업
+            commit = {tid for st, tid, c in gplan if st < t_next - EPS}
+            frozen = set()
+            if freeze_now and t_next < float("inf"):
+                by_c = {c: [tid for st, tid, cc in sorted(gplan) if cc == c] for c in ("SC", "LC")}
+                where = {tid: (c, i) for c, lst in by_c.items() for i, tid in enumerate(lst)}
+                start_of = {tid: st for st, tid, c in gplan}
+                for c, lst in by_c.items():
+                    nxt = [tid for tid in lst if tid not in commit][:freeze_now]
+                    # 곧 시작할 작업만 (먼 미래 작업까지 묶으면 그 사이 빈 시간에 새 작업을 못 넣음)
+                    frozen |= {tid for tid in nxt if not fwin or start_of[tid] < t + fwin - EPS}
+                todo = list(frozen)
+                while todo:
+                    tid = todo.pop()
+                    c, i = where[tid]
+                    need = set(by_c[c][:i]) | {pr for pr in preds[tid] if pr in where}
+                    for x in need - commit - frozen:
+                        frozen.add(x)
+                        todo.append(x)
+                n_frozen += len(frozen)
+                commit |= frozen
+            plan = []
+            for st, tid, c in gplan:
+                if tid not in commit:
+                    continue
+                if tasks[tid].type == "RH":
+                    jid, k = tid.rsplit("_r", 1)
+                    rh_done[jid] = max(rh_done[jid], int(k))
+                plan.append((st, tid, c))
             execute(plan, t)
             if n_solves % log_every == 0 or ei == len(epochs) - 1:
                 print(f"[롤링] 투입 {ei + 1}/{len(epochs)} t={t:.0f} · 계획 SC {len(sub_seq['SC'])} · LC {len(sub_seq['LC'])}"
-                      f"{' (잘림)' if truncated else ''} · {r.status} {dt:.1f}s · 확정 {len(plan)} · 누적 {time.perf_counter() - t0:.0f}s"
+                      f"{' (잘림)' if truncated else ''} · {r.status} {dt:.1f}s · 확정 {len(plan)}"
+                      + (f" (동결 {len(frozen)})" if frozen else "")
+                      + f" · 누적 {time.perf_counter() - t0:.0f}s"
                       + (f" / 전체 제한 {total:.0f}s" if total else ""), flush=True)
             return len(plan), truncated
 
@@ -312,8 +380,11 @@ class RollingMethod(Method):
                     raise _Cancel(f"사용자가 취소함 (투입 {ei + 1}/{len(epochs)}번째, t={t:.0f} 전에 멈춤)")
                 t_next = epochs[ei + 1] if ei + 1 < len(epochs) else float("inf")
                 # 계획 범위를 잘랐으면, 확정이 계속 나오는 동안 같은 시점에서 다음 묶음을 이어서 계획
+                # (작업 지시 동결은 그 시점의 첫 계획에만)
+                first = True
                 while True:
-                    n_commit, truncated = plan_once(ei, t, t_next)
+                    n_commit, truncated = plan_once(ei, t, t_next, freeze if first else 0)
+                    first = False
                     if not truncated or n_commit == 0:
                         break
         except _Cancel as e:
@@ -332,7 +403,7 @@ class RollingMethod(Method):
         # 최종 스케줄 검사 (전체 노트북 제약) · 지표
         starts = executed
         rseqs = {c: [k for k in sorted(order, key=lambda k: executed[k]) if crane_of[k] == c] for c in ("SC", "LC")}
-        errors = verify(inst, tasks, rseqs, prec, starts, True)
+        errors = verify(inst, tasks, rseqs, prec, starts, split)
         res.wall_time = res.solve_time = time.perf_counter() - t0
         res.objective_name = name
         for k in order:
@@ -340,7 +411,7 @@ class RollingMethod(Method):
             res.schedule.append(ScheduleEntry(
                 task=k, crane=c, o=q.o, d=q.d, start=st, end=st + q.duration,
                 duration=q.duration, kind="RH" if q.type == "RH" else "main", job_type=q.type,
-                parent=q.parent, home=q.home, assisted=c != q.home, ready=q.ready,
+                parent=q.parent, home=q.home, assisted=c != q.home, ready=q.ready, rh_time=q.rh_time,
                 truck_out=st + (p.pick if q.type in ("DS", "GI") else q.duration)))
         res.crane_sequences = rseqs
         res.feasible = not errors
@@ -356,7 +427,16 @@ class RollingMethod(Method):
             replan_times=[round(t, 3) for t in epochs], replan_added=added,
             delayed_in_execution=n_delay, total_time_limit=total or None, plan_jobs_max=plan_max or None,
             fast_replans=n_fast, truncated_replans=n_trunc, fallback_plans=n_fallback, inner_status={s: status_inner.count(s) for s in set(status_inner)},
-            rh_after_arrival=True, ld_lookahead=H)
+            rh_after_arrival=True, ld_lookahead=H if split else None, rh_in_job=not split,
+            freeze_tasks=freeze, freeze_window_min=(fwin / 60.0) if freeze else None, frozen_tasks=n_frozen,
+            warm_start=warm, warm_starts=n_warm)
+        if freeze:
+            res.notes.append(f"작업 지시 동결: 재계획 때 크레인별로 다음 {freeze}개 작업(과 그 선행 작업)을 더 확정"
+                             + (f", {fwin / 60:g}분 안에 시작할 작업만" if fwin else "") + f" — 동결로 확정한 작업 {n_frozen}개.")
+        if warm:
+            res.notes.append(f"직전 계획을 MIP 초기해로 준 재계획 {n_warm}번 (지원 배정 = 시작해, 시작 시각 = 힌트).")
+        if not split:
+            res.notes.append("비교군: rehandle 은 원래 크레인이 본 작업 처리시간 안에서 (지원 없음 · 미리 못 함) — 현재 운영.")
         res.notes.append((f"작업 투입: 첫 작업 시각부터 {step / 60:g}분마다 {len(epochs)}번 (그 사이 정보는 다음 투입 때 한꺼번에)"
                           if periodic else f"작업 투입: 새 정보가 들어올 때마다 {len(epochs)}번")
                          + f" · 투입당 작업 평균 {sum(added) / max(1, len(added)):.1f}개.")
@@ -372,13 +452,24 @@ class RollingMethod(Method):
                          + ("통과." if not errors else f"실패: {'; '.join(errors[:3])}"))
         res.notes.append("비교 상한: 같은 조건(반출 RH 는 도착 뒤, 적하 RH 는 AGV 도착 H분 전부터)에서 모든 정보를 처음부터 아는 "
                          "협업 MIP = 협업 모델에 'AGV 도착 H분 전부터' 옵션을 켠 결과.")
-        return res.finalize(t_hat=float(p.t_hat))
+        res = res.finalize(t_hat=float(p.t_hat))
+        # 실데이터 구간이면 같은 정의로 계산한 실제 기록과 비교 (현재 운영 재현 정도)
+        act = (inst.meta or {}).get("actual") or {}
+        if act.get("truck_wait_sum"):
+            mine = res.metrics.get("truck_wait_sum")
+            res.metrics["actual"] = {k: act.get(k) for k in
+                                     ("truck_wait_sum", "truck_wait_internal", "truck_wait_external", "makespan")}
+            if mine is not None:
+                res.metrics["vs_actual_pct"] = round(100.0 * (mine - act["truck_wait_sum"]) / act["truck_wait_sum"], 2)
+                res.notes.append(f"실제 기록 대비: 트럭 대기 {mine:,.0f} s vs 실제 {act['truck_wait_sum']:,.0f} s "
+                                 f"({res.metrics['vs_actual_pct']:+.1f}%). 실제 기록에는 모델에 없는 작업(AH·MI 등)도 섞여 있어 참고용.")
+        return res
 
 
-def _fallback_plan(sub: Instance, H: float, name: str):
+def _fallback_plan(sub: Instance, H: float, name: str, split: bool = True):
     """지원 없이(rehandle 은 원래 크레인) 노트북 제약대로 시각만 계산. [(start, task, crane, kind)]"""
     from .window_rule import decode as wdecode
-    tasks, seqs, prec = tasks_of(sub, True, True, H)
+    tasks, seqs, prec = tasks_of(sub, split, True, H if split else None)
     if not tasks:
         return []
     starts = wdecode(sub, tasks, seqs, prec, name, True, None)
@@ -388,9 +479,14 @@ def _fallback_plan(sub: Instance, H: float, name: str):
 
 
 def rolling_methods(methods: list[Method]) -> list[Method]:
-    """레지스트리용: 롤링 · 창 규칙 v2 / 롤링 · 협업 MIP / 롤링 · 지원 없음."""
+    """레지스트리용: 롤링 · 비교군 MIP / 롤링 · 창 규칙 v2 / 롤링 · 지원 없음 / 롤링 · 협업 MIP."""
     by = {m.key: m for m in methods}
     out = []
+    if "baseline" in by:
+        out.append(RollingMethod(
+            "rolling_baseline", "롤링 · 비교군 MIP", "롤링 비교군", by["baseline"],
+            description="같은 정보 조건(AGV H분 전 · 외부트럭 도착 시)에서 현재 운영(지원 없음, rehandle 은 본 작업 안)을 "
+                        "비교군 MIP 로 다시 계획 · 실데이터 구간이면 실제 기록과 비교"))
     if "window_rule_v2" in by:
         out.append(RollingMethod(
             "rolling_window_v2", "롤링 · Window–Slack ver2", "롤링 v2", by["window_rule_v2"],

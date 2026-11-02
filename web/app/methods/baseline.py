@@ -20,6 +20,7 @@ class BaselineRehandle(NotebookModel):
     label = "비교군 (Rehandle 처리시간 포함)"
     short = "비교군"
     role = "baseline"
+    split = False          # rehandle 은 본 작업 처리시간 안 (롤링 비교군도 이 표현으로 실행)
     notebook = "Reha_Crane_baseline.ipynb"
     paper = "Predetermined Sequence, no assistance"
     description = ("작업 순서·할당 고정. rehandle 은 본 작업(LD·GO) 처리시간에 더해지고, "
