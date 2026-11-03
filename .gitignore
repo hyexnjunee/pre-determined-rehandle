@@ -28,6 +28,10 @@ __pycache__/
 /web/data/server.pid
 /web/experiments/out/
 
+# 서버 실험 결과는 results/ 로 골라서 올림 (deploy/push_results.sh: run.json · 실험 표만, 그림 · 실데이터 실행은 뺌)
+/results/**/*.png
+/results/**/instances/
+
 # 큰 산출물 · 맨 위의 분석 보고서 html
 *.pdf
 *.pptx

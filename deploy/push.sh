@@ -17,6 +17,8 @@ if git diff --cached --quiet; then
 fi
 echo "바뀐 파일:"; git diff --cached --stat | tail -n 30
 git commit -q -m "${MSG}"
+# 서버가 올린 결과(results/)가 GitHub 에 먼저 있으면 그 위에 얹어서 올림
+git pull --rebase -q || { echo "[!] GitHub 최신판과 합치다 충돌 — git status 확인"; exit 1; }
 git push -q
 echo "[+] GitHub 에 올렸습니다: $(git log -1 --format='%h %s')"
 echo "    서버에서: cd ~/Pre-Determined_Rehandle && bash deploy/update.sh"

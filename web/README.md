@@ -268,6 +268,9 @@ web/data/runs/<run_id>/run.json, instance.json, log_<model>.txt, fig_<model>_<n>
 
 실행할 때 `결과 저장` / `인스턴스 저장` 체크박스로 고른다. 둘 다 끄면 파일이 남지 않는다.
 
+서버에서 돌린 결과는 `bash deploy/push_results.sh`(서버) → `bash deploy/pull.sh`(Mac) 로 저장소의 `results/` 에 받는다
+(`results/runs/<run_id>/run.json`, `results/experiments/<이름>/`, 목록 `results/INDEX.md`, 실데이터 실행은 기본 제외 — SERVER.md 5절).
+
 ## 7. 구조
 
 ```

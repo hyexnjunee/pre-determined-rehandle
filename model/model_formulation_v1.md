@@ -112,6 +112,7 @@ Jupyter 에서 노트북을 다시 저장하는 경우가 있으므로, 고치�
 - 2026-10-30 · 10시간 실험 세트 `rolling10h` (균형 18 · 대규모 6(작업 210~260개) · 몰림 20(평균 부하 0.7, 10가지 도착 패턴)), 세트 표에 가장 바쁜 1시간 부하 · 시간별 도착 막대, 부하 지도 평균/피크 전환 (모델 변경 없음)
 - 2026-10-30 · 적하 중심 세트 `loading10h` (적하 비중 18 · 적하 RH 6 · 선박 패턴 12), 생성기 `ld_bay` 옵션, 결과 카드 · 실험 보고서에 적하(LD) 트럭 대기 따로 (모델 변경 없음)
 - 2026-11-02 · 롤링 현실 세팅: 웹 "롤링 · 비교군 MIP"(같은 정보 조건에서 현재 운영 = 비교군 노트북을 롤링, 실데이터면 실제 기록 대비 %), 작업 지시 동결(크레인별 다음 1개 · 5분 안 시작), 재계획 1회 제한 기본 10 s, 롤링 MIP 직전 계획 초기해. 결과 카드는 롤링 방법을 롤링 비교군과 비교. `run_rolling.py --mip-only --instance-files --freeze --freeze-window --no-warm-start` (모델 변경 없음 · 노트북 그대로)
+- 2026-11-03 · 서버 결과를 GitHub 로: `deploy/push_results.sh`(서버, 끝난 웹 실행 run.json · 실험 표 → `results/`, 실데이터 실행 기본 제외) · `deploy/pull.sh`(Mac). `push.sh` 는 push 전 `git pull --rebase`, `update.sh` 는 서버 전용 커밋이 있으면 rebase. 발표자료 `docs/agv_et_decision_deck.html` (2차 데이터 현장 근거 2장 포함) (모델 변경 없음)
 
 ## 휴리스틱: Window–Slack 지원 규칙 (웹 `window_rule`, 2026-10-13)
 `web/app/methods/window_rule.py`. `analysis/assist_cases/assist_rules.html` 의 규칙을 옮긴 solver-free 방법.

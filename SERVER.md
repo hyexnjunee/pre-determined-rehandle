@@ -154,6 +154,22 @@ bash deploy/run_experiment.sh ext_mip --set rolling5h --set-group 극단 --mip -
 
 ## 5. 결과 가져오기 (Mac 에서)
 
+### GitHub 로 (2026-11-03~)
+
+```bash
+# 서버 — 끝난 결과를 results/ 로 모아 GitHub 에 올림 (이름으로 고르려면 "새 정보마다" 처럼 글자 하나)
+cd ~/Pre-Determined_Rehandle && bash deploy/push_results.sh
+# Mac — 받기
+cd ~/workspace/2026/Pre-Determined_Rehandle && bash deploy/pull.sh
+```
+
+- 올라가는 것: 웹 결과 보관함의 `run.json`(끝난 실행만, 그림 · 로그 뺌) → `results/runs/`, 실험 폴더의 `report.md · summary.csv · results.csv · config.json` → `results/experiments/`, 목록 `results/INDEX.md`
+- 실데이터 실행(동원 원본에서 만든 인스턴스)은 기본으로 뺌. 외부 반출이 허용된 것을 확인했으면 `WITH_REAL=1 bash deploy/push_results.sh`
+- 서버가 GitHub 에 커밋을 올리므로 Mac 의 `push.sh` 는 push 전에 `git pull --rebase` 를 함 (results/ 만 바뀌니 충돌 없음)
+- push 가 403 으로 막히면 서버 토큰에 쓰기 권한이 없는 것 → 아래 rsync 를 쓰거나 토큰에 Contents: Read and write 추가
+
+### rsync 로 (GitHub 를 거치지 않음)
+
 ```bash
 cd ~/workspace/2026/Pre-Determined_Rehandle/web/experiments/out
 rsync -av hyeonjun@10.92.62.51:~/Pre-Determined_Rehandle/web/experiments/out/ ./

@@ -9,7 +9,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION="${SESSION:-rehandle}"
 cd "${ROOT}"
 before="$(git rev-parse --short HEAD)"
-git pull --ff-only
+if ! git pull --ff-only -q 2>/dev/null; then
+  # push_results.sh 가 만든 결과 커밋이 서버에만 남은 경우 (push 실패 등)
+  echo "[i] 서버에만 있는 커밋이 있어 rebase 로 받습니다"; git pull --rebase --autostash -q
+fi
 after="$(git rev-parse --short HEAD)"
 if [ "${before}" = "${after}" ]; then
   echo "[=] 이미 최신입니다 (${after})."
