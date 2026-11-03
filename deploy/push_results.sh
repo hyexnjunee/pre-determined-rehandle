@@ -20,6 +20,14 @@ WITH_REAL="${WITH_REAL:-0}"
 if [ ! -d .git ]; then
   echo "[!] git 저장소가 아닙니다 (SERVER.md 1절)."; exit 1
 fi
+if [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ] || [ -f .git/CHERRY_PICK_HEAD ]; then
+  echo "[!] git rebase 가 중간에 멈춰 있습니다. GIT_EDITOR=true git rebase --continue 로 마친 뒤 다시 실행하세요."; exit 1
+fi
+# 서버에 git 이름 · 이메일이 없으면 이 스크립트 안에서만 임시로 씀 (결과 커밋 · rebase 에 필요)
+if [ -z "$(git config user.email || true)" ]; then
+  export GIT_AUTHOR_NAME="$(whoami) (lab server)" GIT_COMMITTER_NAME="$(whoami) (lab server)"
+  export GIT_AUTHOR_EMAIL="$(whoami)@$(hostname)" GIT_COMMITTER_EMAIL="$(whoami)@$(hostname)"
+fi
 
 python3 - "${FILTER}" "${WITH_REAL}" <<'PY'
 import glob, json, os, shutil, sys, time
@@ -108,9 +116,7 @@ if git diff --cached --quiet -- results; then
   echo "[i] 지난번에 못 올린 커밋 ${ahead}개를 올립니다"
 else
   git diff --cached --stat -- results | tail -n 15
-  WHO=()
-  [ -z "$(git config user.email || true)" ] && WHO=(-c "user.name=$(whoami) (lab server)" -c "user.email=$(whoami)@$(hostname)")
-  git ${WHO[@]+"${WHO[@]}"} commit -q -m "서버 실험 결과 $(date '+%Y-%m-%d %H:%M')${FILTER:+ · ${FILTER}}" -- results
+  git commit -q -m "서버 실험 결과 $(date '+%Y-%m-%d %H:%M')${FILTER:+ · ${FILTER}}" -- results
 fi
 git pull --rebase --autostash -q || { echo "[!] GitHub 최신판과 합치지 못했습니다. git status 를 확인하세요."; exit 1; }
 if ! git push -q; then
