@@ -100,15 +100,23 @@ PY
 
 git add results
 if git diff --cached --quiet -- results; then
-  echo "[=] GitHub 에 올릴 새 결과가 없습니다."; exit 0
+  # 지난번에 커밋만 하고 push 가 실패한 결과가 남아 있으면 그것만 올림
+  ahead="$(git rev-list --count '@{u}..HEAD' 2>/dev/null || echo 0)"
+  if [ "${ahead}" = "0" ]; then
+    echo "[=] GitHub 에 올릴 새 결과가 없습니다."; exit 0
+  fi
+  echo "[i] 지난번에 못 올린 커밋 ${ahead}개를 올립니다"
+else
+  git diff --cached --stat -- results | tail -n 15
+  WHO=()
+  [ -z "$(git config user.email || true)" ] && WHO=(-c "user.name=$(whoami) (lab server)" -c "user.email=$(whoami)@$(hostname)")
+  git ${WHO[@]+"${WHO[@]}"} commit -q -m "서버 실험 결과 $(date '+%Y-%m-%d %H:%M')${FILTER:+ · ${FILTER}}" -- results
 fi
-git diff --cached --stat -- results | tail -n 15
-WHO=()
-[ -z "$(git config user.email || true)" ] && WHO=(-c "user.name=$(whoami) (lab server)" -c "user.email=$(whoami)@$(hostname)")
-git ${WHO[@]+"${WHO[@]}"} commit -q -m "서버 실험 결과 $(date '+%Y-%m-%d %H:%M')${FILTER:+ · ${FILTER}}" -- results
 git pull --rebase --autostash -q || { echo "[!] GitHub 최신판과 합치지 못했습니다. git status 를 확인하세요."; exit 1; }
 if ! git push -q; then
-  echo "[!] push 실패. 토큰에 쓰기 권한이 없으면 SERVER.md 5절 (rsync 로 가져오기) 을 쓰세요."; exit 1
+  echo "[!] push 실패 — 결과는 서버에 커밋돼 있으니 고친 뒤 이 스크립트를 다시 실행하면 그대로 올라갑니다."
+  echo "    비밀번호 칸에는 GitHub 계정 비밀번호가 아니라 토큰(ghp_… / github_pat_…)을 넣어야 합니다 (SERVER.md 5절)."
+  echo "    급하면 rsync 로 가져오기 (SERVER.md 5절 아래)."; exit 1
 fi
 echo "[+] GitHub 에 올렸습니다: $(git log -1 --format='%h %s')"
 echo "    Mac 에서: cd ~/workspace/2026/Pre-Determined_Rehandle && bash deploy/pull.sh"
