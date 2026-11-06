@@ -72,9 +72,14 @@ from app.registry import build_registry, default_notebook_dir   # noqa: E402
 ALL = ["roll_base", "roll_nohelp", "roll_v2", "roll_coop", "full_base", "full_nohelp", "full_v2", "full_coop"]
 KEY = {"roll_base": "rolling_baseline", "roll_nohelp": "rolling_nohelp", "roll_v2": "rolling_window_v2",
        "roll_coop": "rolling_coop", "full_base": "baseline",
-       "full_nohelp": "window_rule_v2", "full_v2": "window_rule_v2", "full_coop": "coop"}
-PAIR = {"roll_base": "full_base", "roll_nohelp": "full_nohelp", "roll_v2": "full_v2", "roll_coop": "full_coop"}
+       "full_nohelp": "window_rule_v2", "full_v2": "window_rule_v2", "full_coop": "coop",
+       # 보완 ver (본 작업 순서 교환): 협업+교환 · 교환만(지원 없음) · 롤링 협업+교환
+       "roll_swap": "rolling_coop_swap", "full_swap": "coop_swap", "full_swaponly": "coop_swap"}
+PAIR = {"roll_base": "full_base", "roll_nohelp": "full_nohelp", "roll_v2": "full_v2", "roll_coop": "full_coop",
+        "roll_swap": "full_swap"}
 MIP_ONLY = ["roll_base", "roll_coop", "full_base", "full_coop"]
+SWAP = ["roll_swap", "full_swap", "full_swaponly"]
+MIP_NAMES = ("roll_coop", "roll_base", "roll_swap", "full_coop", "full_base", "full_swap", "full_swaponly")
 
 
 def floats(s):
@@ -103,8 +108,11 @@ def instances(a):
         for r in d["rows"]:
             if a.set_group and r["group"] != a.set_group:
                 continue
-            yield {"cond": f"{r['group']} · {r['label']}", "set_id": r["id"], "seed": r["seed"],
-                   "rho_sc": r["rho_sc"], "rho_lc": r["rho_lc"]}, d["instances"][r["id"]]
+            inst = d["instances"][r["id"]]
+            act = ((inst.meta or {}).get("actual") or {}).get("truck_wait_sum")
+            yield {"cond": f"{r['group']} · {r['label']}", "set_id": r["id"], "seed": r.get("seed"),
+                   "rho_sc": r.get("rho_sc"), "rho_lc": r.get("rho_lc"),
+                   **({"actual_wait": act} if act else {})}, inst
         return
     preset = {"ld": generator.LD_PRESET, "rolling": generator.ROLLING_PRESET, "real": generator.REAL_PRESET,
               "queue": generator.QUEUE_PRESET}[a.preset]
@@ -145,14 +153,18 @@ def run(reg, name, inst, H, a, replan="event"):
         opt.update(replan_opts(replan))
         opt.update(total_time_limit=a.rolling_total, plan_jobs_max=a.plan_jobs,
                    freeze_tasks=a.freeze, freeze_window_min=a.freeze_window, warm_start=not a.no_warm_start)
-        if name in ("roll_coop", "roll_base"):
+        if name in ("roll_coop", "roll_base", "roll_swap"):
             opt.update(time_limit=a.replan_time, threads=a.threads, mip_gap=0.0)
     else:
         opt.update(rh_after_arrival=True, ld_known=True, ld_lookahead_min=H)
         if name == "full_nohelp":
             opt.update(help_go=False, help_ld=False, gap_search=False, recheck=False)
-        if name in ("full_coop", "full_base"):
+        if name in ("full_coop", "full_base", "full_swap", "full_swaponly"):
             opt.update(time_limit=a.mip_time, threads=a.threads, mip_gap=0.0)
+        if name == "full_swaponly":
+            opt.update(allow_assist=False)
+    if name in SWAP:
+        opt.update(swap_window=a.swap_window, swap_fixed_ld=True, swap_fixed_ds=a.swap_fixed_ds)
     t = time.time()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         r = m.solve(inst, opt)
@@ -195,6 +207,10 @@ def main():
     ap.add_argument("--methods", default=None, help="쉼표 구분. 기본: roll_nohelp,roll_v2,full_v2 (+ --mip 이면 roll_coop,full_coop)")
     ap.add_argument("--mip", action="store_true")
     ap.add_argument("--mip-only", action="store_true", help="MIP 네 가지만: 롤링 비교군 · 롤링 협업 · 정적 비교군 · 정적 협업")
+    ap.add_argument("--swap", action="store_true",
+                    help="보완 ver(본 작업 순서 교환)도: roll_swap · full_swap(협업+교환) · full_swaponly(교환만)")
+    ap.add_argument("--swap-window", type=int, default=2, help="순서 교환 범위 K (원래 순서로 몇 칸 안까지)")
+    ap.add_argument("--swap-fixed-ds", action="store_true", help="양하끼리도 순서 고정 (적하끼리는 항상 고정)")
     ap.add_argument("--instance-files", default="", help="저장한 인스턴스 JSON (glob). 실데이터면 실제 기록 대비 % 도 계산")
     ap.add_argument("--freeze", type=int, default=1, help="작업 지시 동결: 재계획 때 크레인별로 더 확정할 작업 수 (0 = 끔)")
     ap.add_argument("--freeze-window", type=float, default=5, help="동결은 이 시간(분) 안에 시작할 작업만 (0 = 제한 없음)")
@@ -230,9 +246,11 @@ def main():
 
     methods = strs(a.methods) if a.methods else (MIP_ONLY if a.mip_only else (
         ["roll_nohelp", "roll_v2", "full_nohelp", "full_v2"] + (["roll_base", "roll_coop", "full_base", "full_coop"] if a.mip else [])))
-    bad = [m for m in methods if m not in ALL]
+    if a.swap and not a.methods:
+        methods += [m for m in SWAP if m not in methods]
+    bad = [m for m in methods if m not in ALL + SWAP]
     if bad:
-        sys.exit(f"알 수 없는 방법: {bad} (가능: {ALL})")
+        sys.exit(f"알 수 없는 방법: {bad} (가능: {ALL + SWAP})")
     reg = build_registry(a.notebooks)
     os.makedirs(os.path.join(a.out, "instances"), exist_ok=True)
     with open(os.path.join(a.out, "config.json"), "w", encoding="utf-8") as f:
@@ -362,6 +380,10 @@ def summarize(rows, methods):
     return out
 
 
+def summary_methods(summary):
+    return list(dict.fromkeys(x["method"] for x in summary))
+
+
 def report(summary, a):
     f = lambda v, d=1: "–" if v is None else f"{v:.{d}f}"
     lines = [f"# 롤링 호라이즌 실험 ({datetime.now():%Y-%m-%d %H:%M})", "",
@@ -371,7 +393,8 @@ def report(summary, a):
              f" · 재계획 MIP {a.replan_time:g}s · 정적 MIP {a.mip_time:g}s"
              f" · 롤링 전체 제한 {a.rolling_total:g}s · 계획 범위 크레인별 {a.plan_jobs or '전부'}"
              f" · 작업 지시 동결 {a.freeze}개" + (f" ({a.freeze_window:g}분 안)" if a.freeze and a.freeze_window else "")
-             + f" · 직전 계획 초기해 {'끔' if a.no_warm_start else '켬'}", "",
+             + f" · 직전 계획 초기해 {'끔' if a.no_warm_start else '켬'}"
+             + (f" · 순서 교환(보완 ver) K={a.swap_window}, 고정 = 적하{'·양하' if a.swap_fixed_ds else ''}끼리" if any(m in SWAP for m in summary_methods(summary)) else ""), "",
              "| 조건 | H(분) | 투입 | 방법 | 풀림/n | 목적값 | 롤링 비교군 대비 % | 무지원 대비 % | 정보 손실 % | 실제 기록 대비 % | 적하 지원 | 반출 지원 | 미리 끝낸 적하 RH | RH(LD/GO) | AGV 대기 | 그중 적하 | ET 대기 | 재계획 | 동결 | 시간 s |",
              "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|"]
     for s in summary:
@@ -386,7 +409,9 @@ def report(summary, a):
               "- 정보 손실: 같은 방법을 정보 다 아는 정적 문제로 풀었을 때보다 나빠진 비율 (roll_* ↔ full_*)",
               "- 미리 끝낸 적하 RH: AGV 가 도착하기 전에 끝난 적하 rehandle 수 (H 가 클수록 늘어야 함)",
               "- 목적값 평균은 풀린 인스턴스만 (협업 MIP 가 실패한 인스턴스가 있으면 방법끼리 직접 비교하지 말고 % 지표를 볼 것)",
-              "- full_* 은 '모든 도착을 처음부터 안다' 는 비현실적 기준. 단 rehandle 허용 시각(반출 = 도착 뒤, 적하 = 도착 H분 전부터)은 롤링과 같음"]
+              "- full_* 은 '모든 도착을 처음부터 안다' 는 비현실적 기준. 단 rehandle 허용 시각(반출 = 도착 뒤, 적하 = 도착 H분 전부터)은 롤링과 같음",
+              "- 보완 ver: full_swap = 협업 + 본 작업 순서 교환, full_swaponly = 교환만 (지원 없음), roll_swap = 롤링 협업 + 교환. "
+              "적하끼리는 순서 고정 (선박 적재 순서)"]
     return "\n".join(lines) + "\n"
 
 

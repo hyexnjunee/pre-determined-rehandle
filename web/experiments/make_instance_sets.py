@@ -28,10 +28,11 @@ from app.instance_sets import SETS, build_set, stats   # noqa: E402
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--set", default="all", choices=sorted(SETS) + ["all"], help="세트 이름 (기본 all = 전부)")
+    gen = sorted(k for k, v in SETS.items() if not v.get("files_only"))   # 실데이터 세트는 make_real_sets.py
+    ap.add_argument("--set", default="all", choices=gen + ["all"], help="세트 이름 (기본 all = 정의로 만드는 세트 전부)")
     ap.add_argument("--out", default=os.path.join(WEB, "data", "instance_sets"))
     a = ap.parse_args()
-    for name in (sorted(SETS) if a.set == "all" else [a.set]):
+    for name in (gen if a.set == "all" else [a.set]):
         make(name, a.out)
 
 

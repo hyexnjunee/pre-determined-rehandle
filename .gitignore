@@ -32,6 +32,9 @@ __pycache__/
 /results/**/*.png
 /results/**/instances/
 
+# 실데이터 실험 세트 (동원 2차 데이터 파생, web/experiments/make_real_sets.py) — 서버에는 rsync 로만
+/web/data/instance_sets/real2026*/
+
 # 큰 산출물 · 맨 위의 분석 보고서 html
 *.pdf
 *.pptx

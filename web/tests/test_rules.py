@@ -413,4 +413,90 @@ class RulesTests(unittest.TestCase):
                     self.assertAlmostEqual(model.ObjVal,r.objective,places=5)
                     model.dispose()
 
+    def test_coop_swap(self):
+        """보완 ver (본 작업 순서 교환): K=0 이면 협업 모델과 같은 값 · K=2 면 같거나 좋아짐 · 적하끼리 순서 유지 ·
+        독립 검사(rules.verify, swap 허용) 통과 · 해를 보완 ver 노트북에 고정해 같은 목적값 · 롤링판도 제약 통과."""
+        from app.generator import LD_PRESET
+        from app.registry import build_registry
+        from app.methods.coop_swap import CoopSwap
+        import tempfile
+        nbdir=str(Path(__file__).resolve().parents[2]/"model")
+        reg=build_registry(nbdir)
+        # 크기 제한 Gurobi 에서도 돌도록 작은 인스턴스 (적하 rehandle 많고 트럭이 몰려 순서 교환 여지가 있게)
+        common=dict(objective="truck_wait",draw_notebook_figure=False,time_limit=30,threads=2,
+                    rh_after_arrival=True,ld_known=True,ld_lookahead_min=60)
+        for seed in (3,4,9):
+            inst=generate(seed=seed,n_ds=2,n_ld=3,n_gi=1,n_go=2,rh_prob=1,rh_max=2,sc_gap=60,lc_gap=80)
+            co=self.solve(reg["coop"],inst,**common)
+            k0=self.solve(reg["coop_swap"],inst,swap_window=0,**common)
+            k2=self.solve(reg["coop_swap"],inst,swap_window=2,**common)
+            self.assertEqual(co.status,"OPTIMAL"); self.assertEqual(k0.status,"OPTIMAL"); self.assertEqual(k2.status,"OPTIMAL")
+            self.assertAlmostEqual(k0.objective,co.objective,places=4)
+            self.assertEqual(k0.metrics["n_swaps"],0)
+            self.assertLessEqual(k2.objective,co.objective+1e-6)
+            # 독립 검사: 노트북 제약을 swap 허용으로
+            tasks,_,prec=tasks_of(inst,True,True,3600)
+            seqs={c:[e.task for e in sorted(k2.schedule,key=lambda e:e.start) if e.crane==c] for c in ("SC","LC")}
+            starts={e.task:e.start for e in k2.schedule}
+            self.assertEqual(verify(inst,tasks,seqs,prec,starts,True,{"fixed":("LD",),"window":2}),[],seed)
+            lds=[e.task for e in sorted(k2.schedule,key=lambda e:e.start) if e.job_type=="LD" and e.kind=="main"]
+            self.assertEqual(lds,[j.id for j in inst.seq_sc if j.type=="LD"])
+            # 해를 보완 ver 노트북에 고정 → 같은 목적값
+            adapter=CoopSwap(nbdir)
+            with tempfile.NamedTemporaryFile(suffix=".log") as f,contextlib.redirect_stdout(io.StringIO()),contextlib.redirect_stderr(io.StringIO()):
+                outcome=nbrunner.execute_cells(adapter.build_cells(inst,dict(common,swap_window=2),f.name)[:-1])
+                self.assertTrue(outcome.ok,outcome.error)
+                ns=outcome.namespace; model=ns["model"]
+                for e in k2.schedule:
+                    ns["s"][e.task].LB=ns["s"][e.task].UB=e.start
+                    if e.kind=="RH":
+                        for c in ns["cand"][e.task]:
+                            ns["x"][e.task,c].LB=ns["x"][e.task,c].UB=int(c==e.crane)
+                ns["makespan"].LB=ns["makespan"].UB=k2.makespan
+                model.Params.OutputFlag=0; model.Params.TimeLimit=10
+                model.optimize()
+                self.assertGreater(model.SolCount,0,(seed,model.Status))
+                self.assertAlmostEqual(model.ObjVal,k2.objective,places=4)
+                model.dispose()
+            # 교환만 (지원 없음): 지원 0 · 협업 K=0(지원 있음)과는 다른 축
+            only=self.solve(reg["coop_swap"],inst,swap_window=2,allow_assist=False,**common)
+            self.assertTrue(only.feasible)
+            self.assertFalse(any(e.assisted for e in only.schedule))
+            # 롤링판: 제약 통과 · 적하 순서 유지
+            r=self.solve(reg["rolling_coop_swap"],inst,objective="truck_wait",agv_info_min=60,freeze_tasks=1,
+                         draw_notebook_figure=False,time_limit=10,threads=2,swap_window=2)
+            self.assertTrue(r.feasible,(seed,r.error))
+            lds=[e.task for e in sorted(r.schedule,key=lambda e:e.start) if e.job_type=="LD" and e.kind=="main"]
+            self.assertEqual(lds,[j.id for j in inst.seq_sc if j.type=="LD"])
+            self.assertIn("n_swaps",r.metrics)
+
+    def test_verify_swap_rules(self):
+        """rules.verify: swap=None 이면 순서가 바뀌면 오류, swap 허용이면 통과, 적하끼리 뒤바뀌면 오류, 창 밖이면 오류."""
+        inst=Instance(id="t",name="t",seq_sc=[Job("DS_1","DS",10),Job("LD_1","LD",20),Job("LD_2","LD",30),Job("DS_2","DS",5)],seq_lc=[])
+        tasks,_,prec=tasks_of(inst,True,True,None)
+        def sched(order):
+            st,t={},0.0
+            for k in order:
+                st[k]=t; t+=tasks[k].duration+200
+            return {"SC":list(order),"LC":[]},st
+        seqs,st=sched(["LD_1","DS_1","LD_2","DS_2"])
+        self.assertIn("main sequence SC",verify(inst,tasks,seqs,prec,st,True))
+        self.assertEqual([e for e in verify(inst,tasks,seqs,prec,st,True,{"fixed":("LD",),"window":1}) if "sequence" in e or "order" in e or "window" in e],[])
+        seqs,st=sched(["DS_1","LD_2","LD_1","DS_2"])
+        self.assertTrue(any(e.startswith("fixed order") for e in verify(inst,tasks,seqs,prec,st,True,{"fixed":("LD",),"window":2})))
+        seqs,st=sched(["DS_2","DS_1","LD_1","LD_2"])
+        self.assertTrue(any(e.startswith("swap window") for e in verify(inst,tasks,seqs,prec,st,True,{"fixed":("LD",),"window":1})))
+
+    def test_real_sets_files_only(self):
+        """실데이터 세트(real2026_*)는 정의로 못 만들고 파일로만: 파일이 없으면 빈 목록 + 안내, make_instance_sets 는 건드리지 않음."""
+        import tempfile
+        from app.instance_sets import load_set, build_set, SETS
+        for name in ("real2026_3h","real2026_5h"):
+            self.assertTrue(SETS[name].get("files_only"))
+            self.assertEqual(build_set(name),[])
+            with tempfile.TemporaryDirectory() as d:
+                out=load_set(name,d)
+                self.assertEqual(out["rows"],[]); self.assertEqual(out["instances"],{})
+                self.assertIn("rsync",out["note"])
+
 if __name__=="__main__": unittest.main()

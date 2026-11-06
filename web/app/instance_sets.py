@@ -283,6 +283,20 @@ SETS = {
         "specs": specs_loading10h,
         "T": T10H, "tag": "10h",
     },
+    # 실데이터 세트 (2026-11-05): 동원 2차 데이터(2024-09 ~ 2026-09)에서 뽑은 구간. 동원 파생물이라 GitHub 에 올리지 않고
+    # Mac 에서 만든 파일(web/data/instance_sets/real2026_*/)을 서버로 rsync 해서 쓴다 (정의로 다시 만들 수 없음)
+    "real2026_3h": {
+        "title": "실데이터 세트 · 2차 데이터 3시간 (real2026)",
+        "note": "동원 2차 데이터 2025-02-09 ~ 2026-09 에서 3시간 구간 지표로 고른 52구간: L1 적하 밀림 + LC 여유 · L2 적하 rehandle 집중 · "
+                "L3 둘 다 바쁨 · L4 평상시 각 10, R 무작위 대표 12. realdata.py 규칙(도착 = REQ_DT, rehandle = RH_CNT, 실제 기록 포함). "
+                "만드는 법: analysis/instance_sets_2026/README.md",
+        "specs": None, "files_only": True, "T": 3 * 3600.0, "tag": "real3h",
+    },
+    "real2026_5h": {
+        "title": "실데이터 세트 · 2차 데이터 5시간 (real2026)",
+        "note": "real2026_3h 와 같은 52구간의 앞뒤를 1시간씩 넓힌 5시간 인스턴스 (구간 길이 효과를 짝으로 비교).",
+        "specs": None, "files_only": True, "T": 5 * 3600.0, "tag": "real5h",
+    },
 }
 
 
@@ -380,7 +394,9 @@ def stats(inst: Instance) -> dict:
 
 
 def build_set(set_name: str = "rolling5h") -> list[tuple[dict, Instance]]:
-    """세트 전체 (정의 순서대로)."""
+    """세트 전체 (정의 순서대로). 파일로만 있는 세트(실데이터)는 정의가 없으므로 빈 목록."""
+    if SETS[set_name].get("files_only"):
+        return []
     return [(s, build(s, set_name)) for s in SETS[set_name]["specs"]()]
 
 
@@ -405,6 +421,10 @@ def load_set(set_name: str, data_dir: str | None = None) -> dict:
             with open(os.path.join(folder, r["id"] + ".json"), encoding="utf-8") as f:
                 insts[r["id"]] = _I.from_dict(json.load(f))
         return {**d, "source": folder, "instances": insts}
+    if SETS[set_name].get("files_only"):
+        return {"set": set_name, "title": SETS[set_name]["title"],
+                "note": SETS[set_name]["note"] + " ⚠ 이 컴퓨터에는 인스턴스 파일이 없습니다 (Mac 에서 make_real_sets.py → rsync, SERVER.md 8절).",
+                "rows": [], "source": "파일 없음", "instances": {}, "files_only": True}
     rows, insts = [], {}
     for spec, inst in build_set(set_name):
         insts[inst.id] = inst

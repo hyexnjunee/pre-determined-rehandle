@@ -15,6 +15,7 @@ import os
 from .methods.base import Method
 from .methods.baseline import BaselineRehandle
 from .methods.coop import CoopRehandle
+from .methods.coop_swap import CoopSwap
 from .methods.window_rule import WindowRule, WindowRuleV2
 from .methods.rolling import rolling_methods
 
@@ -23,6 +24,7 @@ def build_registry(notebook_dir: str) -> dict[str, Method]:
     methods: list[Method] = [
         BaselineRehandle(notebook_dir),
         CoopRehandle(notebook_dir),
+        CoopSwap(notebook_dir),
         WindowRule(),
         WindowRuleV2(),
     ]

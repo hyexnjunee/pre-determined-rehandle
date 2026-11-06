@@ -116,6 +116,19 @@ DS·LD·GI·GO 개수, rehandle 발생 확률과 최대 개수, 다른 bay 로 �
 **이 이름들만 바꾸지 않으면** 노트북을 고쳐도 웹이 그대로 따라간다.
 바꿨다면 `app/methods/notebook_model.py` 의 `build_cells()` 와 각 어댑터의 `extract()` 만 고치면 된다.
 
+### 보완 ver: 본 작업 순서 교환 (2026-11-06, `model/model_formulation_swap.md`)
+
+`협업 MIP · 순서 교환 (보완 ver)` (`app/methods/coop_swap.py` → `model/Reha_Crane_predetermined_swap.ipynb`):
+같은 크레인에서 원래 순서로 K칸(기본 2) 안의 두 본 작업은 순서를 바꿀 수 있고, 적하끼리는 선박 적재 순서라 고정.
+K = 0 이면 협업 모델과 같은 값. `반대편 크레인 지원 허용` 을 끄면 **교환만**. 결과 지표: 바꾼 쌍 · 자리를 옮긴 작업 · 최대 이동 칸.
+실험: `run_rolling.py --swap [--swap-window K] [--swap-fixed-ds]` → `full_swap` · `full_swaponly` · `roll_swap`.
+
+### 실데이터 실험 세트 real2026 (2026-11-06)
+
+`real2026_3h` · `real2026_5h` = 동원 2차 데이터에서 뽑은 52구간 (L1~L4 각 10, R 12). 정의로 만들 수 없고 파일로만 있다:
+Mac 에서 `python experiments/make_real_sets.py` 로 `data/instance_sets/real2026_*/` 에 설치(GitHub 제외), 서버는 rsync (SERVER.md 8절).
+`make_instance_sets.py --set all` 은 이 두 세트를 건드리지 않는다.
+
 ## 5. 모델 추가
 
 ```python
@@ -188,6 +201,7 @@ ETD 가 맞지 않으면 그만큼 늦춰 실행 → 최종 스케줄은 항상 
 | 롤링 · Window–Slack ver2 | 창 규칙 v2 (AGV H분 전 · 반출 도착 뒤 규칙) |
 | 롤링 · 지원 없음 | 같은 설정에서 지원만 끔 (기준) |
 | 롤링 · 협업 MIP | 협업 MIP, 재계획 1회 제한 시간 옵션 |
+| 롤링 · 협업 MIP · 순서 교환 (보완 ver) | 보완 ver 노트북 (아래), 재계획마다 공개된 작업 안에서 K칸 교환 |
 
 옵션: AGV 정보 시간 H(분), 외부트럭 정보 시간(분, 기본 0 = 도착해야 앎),
 **작업 투입(재계획) 방식** — `새 정보마다`(기본, 트럭이 오면 바로 배정하는 현실 운영) 또는 `일정 간격`(비교용, 첫 작업 시각부터 Δ분마다, 기본 30분:

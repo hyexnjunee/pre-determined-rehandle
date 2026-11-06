@@ -173,8 +173,12 @@ def objective(inst, tasks, starts, name):
                for t,q in tasks.items() if q.type!="RH" and (name=="truck_wait" or q.type=="GO")) + .001*span
 
 
-def verify(inst, tasks, seqs, prec, starts, split):
-    """Check actual notebook constraints, independently of decoder's order."""
+def verify(inst, tasks, seqs, prec, starts, split, swap=None):
+    """Check actual notebook constraints, independently of decoder's order.
+    swap = None 이면 본 작업 순서가 predetermined 와 같아야 한다.
+    swap = {"fixed": ("LD",), "window": K 또는 None} 이면 (보완 ver) 순서를 바꿔도 되지만
+    fixed 유형끼리는 원래 순서, window 가 있으면 뒤바뀐 두 작업의 원래 거리 ≤ K.
+    HOME_RH_FIXED 는 실제 순서의 직전 본 작업 기준."""
     errors, p = [], inst.params
     assigned = {t:c for c,seq in seqs.items() for t in seq}
     if set(assigned)!=set(tasks) or sum(map(len,seqs.values()))!=len(tasks):
@@ -196,14 +200,28 @@ def verify(inst, tasks, seqs, prec, starts, split):
                     errors.append(f"crane travel {a}/{b}")
         mains = [t for t in seq if tasks[t].type!="RH"]
         expected = [j.id for j in (inst.seq_sc if c=="SC" else inst.seq_lc)]
-        if mains != expected:
+        if swap is None:
+            if mains != expected:
+                errors.append(f"main sequence {c}")
+        elif sorted(mains) != sorted(expected):
             errors.append(f"main sequence {c}")
+        else:
+            pos = {t: k for k, t in enumerate(expected)}
+            fixed, K = set(swap.get("fixed") or ()), swap.get("window")
+            for ia, ta in enumerate(mains):
+                for tb in mains[ia+1:]:
+                    if pos[ta] > pos[tb]:                       # 원래 tb 가 앞인데 ta 가 먼저
+                        if tasks[ta].type in fixed and tasks[tb].type in fixed:
+                            errors.append(f"fixed order {tb}/{ta}")
+                        elif K is not None and pos[ta]-pos[tb] > K:
+                            errors.append(f"swap window {tb}/{ta}")
+        ref = mains if (swap is not None and sorted(mains) == sorted(expected)) else expected
         if split:
             for r in seq:
                 q = tasks[r]
-                if q.type=="RH" and q.home==c:
-                    k = expected.index(q.parent)
-                    if k and starts[r]+EPS < starts[expected[k-1]]+tasks[expected[k-1]].duration+abs(tasks[expected[k-1]].d-q.o)*p.t_hat:
+                if q.type=="RH" and q.home==c and q.parent in ref:
+                    k = ref.index(q.parent)
+                    if k and starts[r]+EPS < starts[ref[k-1]]+tasks[ref[k-1]].duration+abs(tasks[ref[k-1]].d-q.o)*p.t_hat:
                         errors.append(f"HOME_RH_FIXED {r}")
     for a in seqs["SC"]:
         for b in seqs["LC"]:

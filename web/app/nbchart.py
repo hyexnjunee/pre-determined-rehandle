@@ -27,6 +27,7 @@ EN_TITLE = {
     "rolling_nohelp": "Rolling horizon: no assist",
     "rolling_coop": "Rolling horizon: cooperative MIP re-solved at each information event",
     "rolling_baseline": "Rolling horizon: baseline MIP (no assist, rehandle in process time)",
+    "rolling_coop_swap": "Rolling horizon: cooperative MIP + limited swap (revised ver)",
     "assist_lonrem": "Heuristic: RH Insertion + LonRem",
     "lonrem": "Heuristic: LonRem (no assist, rehandle in process time)",
     "remreq": "Heuristic: RemReq (no assist, rehandle in process time)",

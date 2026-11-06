@@ -9,6 +9,8 @@
   - AGV(양하 DS · 적하 LD): 도착 H분(기본 60분) 전에 알게 된다 → 적하 rehandle 은 그때부터 미리 가능
 본 작업 순서는 고정(predetermined). 크레인별로 "앞에서부터 공개된 작업까지"(접두부)만 계획에 넣는다
 (순서가 고정이라, 아직 모르는 작업 뒤의 작업은 어차피 먼저 할 수 없다).
+보완 ver(협업 MIP · 순서 교환)를 안쪽으로 쓰면 재계획마다 공개된 접두부 안에서 K칸 교환을 허용한다.
+재계획마다 다시 바꾸므로 누적 이동은 K 보다 클 수 있다 → 최종 검사는 '적하끼리 원래 순서' 만 보고, 이동 칸 수를 기록한다.
 
 재계획 (작업 투입)
   - 시점: "새 정보마다" = ET 도착 · AGV 정보 공개 때마다,
@@ -68,6 +70,7 @@ class RollingMethod(Method):
         # 비교군 노트북처럼 rehandle 을 본 작업 처리시간에 넣는 안쪽 방법이면 split=False
         self.split = bool(getattr(inner, "split", True))
         self.mip = isinstance(inner, NotebookModel)
+        self.swap = bool(getattr(inner, "swap", False))      # 보완 ver: 본 작업 순서 교환
         self.paper = "롤링 호라이즌 · 외부트럭은 도착 시, AGV 는 H분 전 정보 공개 · 새 정보마다 재계획(기본) · 작업 지시 동결"
         hidden = {"ld_known", "ld_lookahead_min", "rh_after_arrival", "draw_notebook_figure"} | set(self.inner_fixed)
         inner_opts = {k: v for k, v in (inner.options or {}).items() if k not in hidden}
@@ -403,7 +406,11 @@ class RollingMethod(Method):
         # 최종 스케줄 검사 (전체 노트북 제약) · 지표
         starts = executed
         rseqs = {c: [k for k in sorted(order, key=lambda k: executed[k]) if crane_of[k] == c] for c in ("SC", "LC")}
-        errors = verify(inst, tasks, rseqs, prec, starts, split)
+        swap_cfg = None
+        if self.swap:
+            from .coop_swap import swap_fixed_types
+            swap_cfg = {"fixed": swap_fixed_types(inner_opt), "window": None}
+        errors = verify(inst, tasks, rseqs, prec, starts, split, swap_cfg)
         res.wall_time = res.solve_time = time.perf_counter() - t0
         res.objective_name = name
         for k in order:
@@ -430,6 +437,17 @@ class RollingMethod(Method):
             rh_after_arrival=True, ld_lookahead=H if split else None, rh_in_job=not split,
             freeze_tasks=freeze, freeze_window_min=(fwin / 60.0) if freeze else None, frozen_tasks=n_frozen,
             warm_start=warm, warm_starts=n_warm)
+        if self.swap:
+            inv, shift = 0, 0
+            for c, exp in (("SC", seqs["SC"]), ("LC", seqs["LC"])):
+                real = [k for k in rseqs[c] if tasks[k].type != "RH"]
+                pos = {t: k for k, t in enumerate(exp)}
+                inv += sum(1 for ia, ta in enumerate(real) for tb in real[ia + 1:] if pos[ta] > pos[tb])
+                shift = max([shift] + [abs(k - pos[t]) for k, t in enumerate(real)])
+            K = int(float(inner_opt.get("swap_window", 2) or 0))
+            res.metrics.update(swap_window=K, n_swaps=inv, max_shift=shift, swap_fixed_types=list(swap_cfg["fixed"]))
+            res.notes.append(f"순서 교환 (보완 ver): 재계획마다 공개된 작업 안에서 {K}칸 교환 허용, "
+                             f"{'·'.join(swap_cfg['fixed']) or '없음'}끼리는 고정. 최종 순서에서 뒤바뀐 본 작업 쌍 {inv}개, 최대 {shift}칸 이동.")
         if freeze:
             res.notes.append(f"작업 지시 동결: 재계획 때 크레인별로 다음 {freeze}개 작업(과 그 선행 작업)을 더 확정"
                              + (f", {fwin / 60:g}분 안에 시작할 작업만" if fwin else "") + f" — 동결로 확정한 작업 {n_frozen}개.")
@@ -499,4 +517,8 @@ def rolling_methods(methods: list[Method]) -> list[Method]:
         out.append(RollingMethod(
             "rolling_coop", "롤링 · 협업 MIP", "롤링 MIP", by["coop"],
             description="정보가 들어올 때마다 협업 MIP 를 짧은 시간 제한으로 다시 풂 (재계획 1회 제한 옵션)"))
+    if "coop_swap" in by:
+        out.append(RollingMethod(
+            "rolling_coop_swap", "롤링 · 협업 MIP · 순서 교환 (보완 ver)", "롤링 MIP+교환", by["coop_swap"],
+            description="롤링 협업 MIP 에 본 작업 순서 교환(K칸, 적하끼리 고정)을 더한 보완판"))
     return out

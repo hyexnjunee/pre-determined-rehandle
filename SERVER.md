@@ -194,3 +194,38 @@ rsync -av ~/workspace/2026/Pre-Determined_Rehandle/data/ hyeonjun@10.92.62.51:~/
 ## 7. 코드를 고쳤을 때
 
 1절 "이후 코드 업데이트": Mac `bash deploy/push.sh "메시지"` → 서버 `bash deploy/update.sh`.
+
+---
+
+## 8. 실데이터 실험 세트 real2026 · 보완 ver 비교 실험 (2026-11-06)
+
+동원 2차 데이터(2025-02 ~ 2026-09)에서 뽑은 인스턴스 104개 (3시간 52 · 5시간 52, 만드는 법 `analysis/instance_sets_2026/README.md`).
+동원 파생물이라 **GitHub 에 없다** (`.gitignore`) → Mac 에서 세트를 설치해 rsync 로 보낸다.
+
+```bash
+# Mac — 세트 설치 (analysis/instance_sets_2026/out → web/data/instance_sets/real2026_3h · real2026_5h)
+cd ~/workspace/2026/Pre-Determined_Rehandle && python3 web/experiments/make_real_sets.py
+# Mac → 서버 (학교 밖이면 VPN)
+rsync -av web/data/instance_sets/real2026_3h web/data/instance_sets/real2026_5h \
+      hyeonjun@10.92.62.51:~/Pre-Determined_Rehandle/web/data/instance_sets/
+```
+
+웹 실행 탭 "실험 세트" 에 두 세트가 보인다 (파일이 없으면 "인스턴스 파일이 없습니다" 안내만).
+
+```bash
+# 서버 — ① 3시간: MIP 네 가지 + 보완 ver 세 가지 (교환만 · 협업+교환 · 롤링 협업+교환)
+bash deploy/run_experiment.sh real3h_mip --set real2026_3h --mip-only --swap --swap-window 2 \
+     --agv-info 60 --replan event --workers 8 --threads 8 --mip-time 900 --replan-time 10
+# ② 3시간 휴리스틱 · AGV 정보 시간 민감도 (빠름)
+bash deploy/run_experiment.sh real3h_heur --set real2026_3h --agv-info 30,60,90 --workers 16 --threads 1
+# ③ 5시간 (오래 걸림)
+bash deploy/run_experiment.sh real5h_mip --set real2026_5h --mip-only --swap --swap-window 2 \
+     --agv-info 60 --replan event --workers 8 --threads 8 --mip-time 1800 --replan-time 10
+```
+
+- 한 묶음만 먼저: `--set-group L1` (L1 · L2 · L3 · L4 · R)
+- 방법 키: `full_base`(비교군) · `full_coop`(협업) · `full_swaponly`(교환만) · `full_swap`(협업+교환) · `roll_base` · `roll_coop` · `roll_swap`
+- 시간 어림 (최악, 제한을 다 쓸 때): ① 52개 × 정적 MIP 4개 × 900 s ÷ 8 ≈ 6.5시간 + 롤링. 보통은 훨씬 짧다 (3시간 구간 본 작업 30~70개)
+- **결과는 GitHub 로 올라가지 않는다**: `push_results.sh` 는 실데이터 실험 폴더(`--set real…` · `--instance-files`)를 기본으로 뺀다.
+  Mac 으로는 5절 rsync 로 가져온다 (`web/experiments/out/`)
+

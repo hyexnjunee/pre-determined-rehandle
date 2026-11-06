@@ -9,7 +9,7 @@
 #   results/runs/<run_id>/run.json      웹 결과 보관함 (끝난 실행만, 그림 PNG · 로그는 뺌)
 #   results/experiments/<이름>/          run_experiment.sh 결과 (report.md · summary.csv · results.csv · config.json, instances/ 는 뺌)
 #   results/INDEX.md                    웹 실행 목록 (방법별 트럭 대기 합)
-# 실데이터(동원 원본에서 만든 인스턴스) 실행은 기본으로 뺀다.
+# 실데이터(동원 원본에서 만든 인스턴스) 실행 · 실험 폴더(real2026 세트, --instance-files)는 기본으로 뺀다.
 #   외부 반출이 허용된 것을 확인했으면: WITH_REAL=1 bash deploy/push_results.sh
 # ============================================================
 set -euo pipefail
@@ -62,9 +62,18 @@ for p in sorted(glob.glob("web/data/runs/*/run.json")):
         print(f"  + 웹 실행 {rid}  {d.get('label')}  ({d.get('instance_name')})")
 
 KEEP = {"report.md", "summary.csv", "results.csv", "results_partial.csv", "config.json"}
+skip_real_exp = 0
 for d in sorted(glob.glob("web/experiments/out/*/")):
     name = os.path.basename(d.rstrip("/"))
     if flt and flt not in name:
+        continue
+    # 실데이터 실험 (real2026 세트 · 인스턴스 파일) 은 실제 기록 값이 들어 있으므로 기본 제외
+    try:
+        cfg = json.load(open(os.path.join(d, "config.json"), encoding="utf-8"))
+    except Exception:
+        cfg = {}
+    if (str(cfg.get("set") or "").startswith("real") or cfg.get("instance_files")) and not with_real:
+        skip_real_exp += 1
         continue
     files = [f for f in os.listdir(d) if f in KEEP]
     if not files:
@@ -103,7 +112,7 @@ with open(f"{OUT}/INDEX.md", "w", encoding="utf-8") as f:
             "트럭 대기 합(초). 협업 = AGV 60분 전 + 모든 도착을 미리 아는 정적 MIP, 롤링 = 새로 알게 될 때마다 재계획.\n\n"
             "| 시작 | 실행 | 이름 | 인스턴스 | 작업/RH | " + " | ".join(n for _, n in COLS) + " | 그 밖 |\n"
             "|---|---|---|---|---|" + "---|" * len(COLS) + "---|\n" + "\n".join(rows) + "\n")
-print(f"[=] 새로 · 바뀐 파일 {new}개  (실데이터 실행 제외 {skip_real}개, 안 끝난 · 취소 {skip_run}개)")
+print(f"[=] 새로 · 바뀐 파일 {new}개  (실데이터 웹 실행 제외 {skip_real}개 · 실데이터 실험 폴더 제외 {skip_real_exp}개, 안 끝난 · 취소 {skip_run}개)")
 PY
 
 git add results

@@ -1665,7 +1665,7 @@ function compareTableHTML(rs, act){
 }
 
 // 롤링 결과와 짝지을 정적(정보를 처음부터 다 아는) 결과
-const ROLL_PAIR = {rolling_coop: 'coop', rolling_window_v2: 'window_rule_v2', rolling_baseline: 'baseline'};
+const ROLL_PAIR = {rolling_coop: 'coop', rolling_coop_swap: 'coop_swap', rolling_window_v2: 'window_rule_v2', rolling_baseline: 'baseline'};
 function rollingCardsHTML(r, rs){
   const m = M(r), sched = r.schedule || [];
   const sgn = v => v==null ? '–' : (v>0?'−':v<0?'+':'')+Math.abs(v).toFixed(1)+'%';
@@ -1704,7 +1704,7 @@ function rollingCardsHTML(r, rs){
   } else if (pk) {
     infoBox = `<div class="box"><div class="k">정보를 다 아는 정적 결과 대비</div><div class="v">–</div>
       <div class="sub">${pk==='baseline' ? "같은 실행에 정적 '비교군' 을 함께 돌리면 정보 손실이 나옵니다"
-        : `같은 실행에 정적 '${pk==='coop'?'협업 모델':'Window–Slack ver2'}' 를 'AGV 도착 ${(H/60).toFixed(0)}분 전부터' 옵션으로 함께 돌리면 정보 손실이 나옵니다`}</div></div>`;
+        : `같은 실행에 정적 '${pk==='coop'?'협업 모델':pk==='coop_swap'?'협업 MIP · 순서 교환':'Window–Slack ver2'}' 를 'AGV 도착 ${(H/60).toFixed(0)}분 전부터' 옵션으로 함께 돌리면 정보 손실이 나옵니다`}</div></div>`;
   }
   const refBox = ref ? (() => { const g = pct(M(ref).truck_wait_sum, m.truck_wait_sum);
     return `<div class="box"><div class="k">롤링 · 지원 없음 대비 (지원 효과)</div><div class="v ${cls(g)}">${sgn(g)}</div>
@@ -2351,7 +2351,7 @@ function buildExports(rows, methods, metrics){
   const texEsc = s => String(s ?? '').replace(/([&%$#_{}])/g,'\\$1').replace(/–/g,'--').replace(/\*/g,'$^{*}$');
   const align = 'lrrr' + methods.map(()=>metrics.map(k=>METRIC_DEFS[k].w==='right'?'r':'l').join('')).join('');
   const span = metrics.length;
-  const texLabel = m => m.key==='baseline' ? 'Baseline' : (m.key==='coop' ? 'Cooperative' : m.key);
+  const texLabel = m => m.key==='baseline' ? 'Baseline' : (m.key==='coop' ? 'Cooperative' : (m.key==='coop_swap' ? 'Cooperative + swap' : m.key));
   let grp = ' & & & '; const cmid = []; let col = 5;
   methods.forEach((m,i) => { grp += (i?' & ':'') + `\\multicolumn{${span}}{c}{${texLabel(m)}}`; cmid.push(`\\cmidrule(lr){${col}-${col+span-1}}`); col += span; });
   grp += ' \\\\';
