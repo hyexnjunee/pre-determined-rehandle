@@ -277,7 +277,11 @@ class PriorityRule(Method):
         if name not in ("makespan","truck_wait","go_wait"):
             raise ValueError("invalid objective")
         rh_arr = bool(options.get("rh_after_arrival", True)) if self.split else False
-        tasks, seqs, prec = tasks_of(inst,self.split,rh_arr)
+        ld_h = None
+        if self.split:
+            from .coop import ld_lookahead_seconds
+            ld_h = ld_lookahead_seconds(options)   # 협업 MIP 와 같은 기본 (적하 AGV 60분 전부터 앎)
+        tasks, seqs, prec = tasks_of(inst,self.split,rh_arr,ld_h)
         starts = (initial_schedule(inst,tasks,seqs,prec,name,self.rule) if self.split
                   else decode(inst,tasks,seqs,prec,self.rule))
         if starts is None:
@@ -350,6 +354,8 @@ class PriorityRule(Method):
                            go_only=bool(options.get("go_only",True)) if self.split else None,
                            no_delay=bool(options.get("no_delay",False)) if self.split else None,
                            rh_after_arrival=rh_arr if self.split else None)
+        if self.split:
+            res.metrics["ld_lookahead"] = ld_h
         res.notes.append("논문 priority 아이디어를 노트북 ETD 제약에 적용한 변형. 논문 시뮬레이터/두 룰 조합의 재현이 아닙니다.")
         res.notes.append("MIP 해를 사용하지 않음. 시간창·초기 이동·고정 본 작업 순서·빈 이동·RH 선행·ETD 검증 통과. gap/bound 는 최적화 인증이 없어 비워 둠.")
         if self.split:
@@ -377,4 +383,6 @@ class AssistRule(PriorityRule):
         "passes":{"type":"number","default":3,"label":"최대 개선 횟수"},
         "go_only":{"type":"checkbox","default":True,"label":"GO RH만 재할당 (끄면 LD도 허용)"},
         "no_delay":{"type":"checkbox","default":False,"label":"SC 본 작업 무지연 (초기 무지원 룰 스케줄 기준)"},
-        "rh_after_arrival":{"type":"checkbox","default":True,"label":"rehandle 은 트럭 도착 뒤에만 시작 (RH_AFTER_ARRIVAL)"}}
+        "rh_after_arrival":{"type":"checkbox","default":True,"label":"rehandle 은 트럭 도착 뒤에만 시작 (RH_AFTER_ARRIVAL)"},
+        "ld_known":{"type":"checkbox","default":True,"label":"적하(LD) rehandle 은 AGV 도착 H분 전부터 미리 가능 (LD_LOOKAHEAD, 기본 켬)"},
+        "ld_lookahead_min":{"type":"number","default":60,"label":"H: AGV 도착을 미리 아는 시간 (분, 기본 60)"}}

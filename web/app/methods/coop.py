@@ -15,11 +15,15 @@ from .base import MethodResult, ScheduleEntry
 from .notebook_model import COMMON_OPTIONS, NotebookModel
 
 
+LD_LOOKAHEAD_MIN = 60     # 기본: 적하 AGV 도착을 60분 전부터 안다 (현장 AGV 정보, 2026-11-06 기본값으로)
+
+
 def ld_lookahead_seconds(options: dict[str, Any]):
-    """웹 옵션 → LD_LOOKAHEAD (초). 끄면 None (LD 도 RH_AFTER_ARRIVAL 을 따름)."""
-    if not options.get("ld_known", False):
+    """웹 옵션 → LD_LOOKAHEAD (초). 기본은 켬 · 60분. 끄면 None (LD 도 RH_AFTER_ARRIVAL 을 따름)."""
+    if not options.get("ld_known", True):
         return None
-    return max(0.0, float(options.get("ld_lookahead_min", 30) or 0) * 60.0)
+    v = options.get("ld_lookahead_min", LD_LOOKAHEAD_MIN)
+    return max(0.0, float(LD_LOOKAHEAD_MIN if v is None or v == "" else v) * 60.0)
 
 
 def ld_lookahead_code(options: dict[str, Any]) -> str:
@@ -44,9 +48,9 @@ class CoopRehandle(NotebookModel):
                           "label": "원래 크레인 rehandle 은 본 작업 직전에만 (HOME_RH_FIXED)"},
         "rh_after_arrival": {"type": "checkbox", "default": True,
                              "label": "rehandle 은 트럭 도착 뒤에만 시작 (RH_AFTER_ARRIVAL)"},
-        "ld_known": {"type": "checkbox", "default": False,
-                     "label": "적하(LD) rehandle 은 AGV 도착 H분 전부터 미리 가능 (LD_LOOKAHEAD)"},
-        "ld_lookahead_min": {"type": "number", "default": 30, "label": "H: AGV 도착을 미리 아는 시간 (분)"},
+        "ld_known": {"type": "checkbox", "default": True,
+                     "label": "적하(LD) rehandle 은 AGV 도착 H분 전부터 미리 가능 (LD_LOOKAHEAD, 기본 켬)"},
+        "ld_lookahead_min": {"type": "number", "default": LD_LOOKAHEAD_MIN, "label": "H: AGV 도착을 미리 아는 시간 (분, 기본 60)"},
     }
 
     def switches(self, options: dict[str, Any]) -> dict[str, str]:
@@ -86,7 +90,8 @@ class CoopRehandle(NotebookModel):
         res.metrics["ld_lookahead"] = ns.get("LD_LOOKAHEAD")
         if not res.metrics["allow_assist"]:
             res.notes.append("ALLOW_ASSIST=False — 모든 rehandle 을 원래 크레인이 수행 "
-                             "(비교군과 같은 값이 나와야 정상).")
+                             "(LD_LOOKAHEAD 를 끄면 비교군과 같은 값이 나와야 정상. 켜면 적하 rehandle 을 AGV 도착 전에 "
+                             "미리 할 수 있어 비교군보다 같거나 좋음).")
         res.notes.append("RH 막대 = 독립 rehandle 작업. 반대편 크레인 행에 있으면 지원받은 것.")
         if res.metrics["ld_lookahead"] is not None:
             res.notes.append(f"LD_LOOKAHEAD={res.metrics['ld_lookahead']:.0f}s — 적하 rehandle 은 AGV 도착 "

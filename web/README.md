@@ -119,9 +119,10 @@ DS·LD·GI·GO 개수, rehandle 발생 확률과 최대 개수, 다른 bay 로 �
 ### 보완 ver: 본 작업 순서 교환 (2026-11-06, `model/model_formulation_swap.md`)
 
 `협업 MIP · 순서 교환 (보완 ver)` (`app/methods/coop_swap.py` → `model/Reha_Crane_predetermined_swap.ipynb`):
-같은 크레인에서 원래 순서로 K칸(기본 2) 안의 두 본 작업은 순서를 바꿀 수 있고, 적하끼리는 선박 적재 순서라 고정.
-K = 0 이면 협업 모델과 같은 값. `반대편 크레인 지원 허용` 을 끄면 **교환만**. 결과 지표: 바꾼 쌍 · 자리를 옮긴 작업 · 최대 이동 칸.
-실험: `run_rolling.py --swap [--swap-window K] [--swap-fixed-ds]` → `full_swap` · `full_swaponly` · `roll_swap`.
+같은 크레인에서 원래 순서로 K칸(기본 2) 안의 두 본 작업은 순서를 바꿀 수 있다. **기본은 적하끼리도 교환 가능**
+(경우에 따라 더 좋을 수 있어서, 2026-11-06 (2)). 선박 적재 순서를 지켜야 하면 `적하끼리는 순서 고정` 을 켠다.
+K = 0 이면 협업 모델과 같은 값. `반대편 크레인 지원 허용` 을 끄면 **교환만**. 결과 지표: 바꾼 쌍(그중 적하끼리) · 자리를 옮긴 작업 · 최대 이동 칸.
+실험: `run_rolling.py --swap [--swap-window K] [--swap-fixed-ld] [--swap-fixed-ds]` → `full_swap` · `full_swaponly` · `roll_swap`.
 
 ### 실데이터 실험 세트 real2026 (2026-11-06)
 
@@ -156,9 +157,10 @@ class MyModel(NotebookModel):
 
 `coop`·`window_rule`·`window_rule_v2` 의 "rehandle 은 트럭 도착 뒤에만 시작" (`RH_AFTER_ARRIVAL`) 은 기본 켬이다.
 켠 상태가 다르면 "MIP 대비" 칸에 "조건 다름" 으로 표시하고 값을 계산하지 않는다.
-같은 세 모델에 "적하(LD) rehandle 은 AGV 도착 H분 전부터 미리 가능" (`LD_LOOKAHEAD`, 기본 끔 · H 30분) 옵션이 있다.
+같은 세 모델(과 보완 ver · RH+LonRem)에 "적하(LD) rehandle 은 AGV 도착 H분 전부터 미리 가능" (`LD_LOOKAHEAD`) 옵션이 있고,
+**기본 켬 · H 60분** 이다 (2026-11-06 (2) 부터. AGV 는 미리 배차되므로 따로 체크할 필요 없게). 끄면 적하 rehandle 도 트럭 도착 뒤.
 반출은 외부트럭 도착을 모른다고 보고 트럭 도착 뒤에만 한다. 실험용 인스턴스는 생성기 "적하 rehandle 실험값" (실데이터는 LD rehandle 3.5 % 로 드묾),
-실험 스크립트는 `--preset ld --ld-lookahead 30`.
+실험 스크립트는 `--preset ld` (H 기본 60분, `--ld-lookahead 30` 으로 바꾸거나 `--no-ld-lookahead` 로 끔).
 공통 Gantt 에서 빨간 테두리 = 지원 크레인의 다음 자기 트럭이 이미 와 있는데 시작한 지원 rehandle (제목 줄에 개수).
 비교표의 "겹침 / 대기" 는 지원 rehandle 이 원래 크레인의 다른 작업과 동시에 진행된 시간 / 원래 크레인이 rehandle 끝나기를 기다린 시간이다.
 생성기의 "대기열 있는 보정값" 은 실데이터 보정값에서 LC 트럭 간격만 200 s 로 줄인 것 (반출 트럭이 줄 서 있는 상황).
@@ -211,7 +213,9 @@ ETD 가 맞지 않으면 그만큼 늦춰 실행 → 최종 스케줄은 항상 
 **현실적인 운영 세팅** (2026-11-02):
 - `롤링 · 비교군 MIP` — 같은 정보 조건에서 현재 운영을 롤링으로 푼 비교군. 결과 요약에서 롤링 방법들은 정적 비교군이 아니라
   이 롤링 비교군과 비교한다 (정적 비교군은 모든 도착을 처음부터 알아 롤링보다 정보가 많음). 실데이터 구간(실데이터 가져오기)이면
-  **현재 운영 재현 · 실제 기록 대비** 카드에 같은 정의로 계산한 실제 트럭 대기와의 차이(%)가 나온다 (0 에 가까울수록 현재 운영을 잘 재현)
+  **현재 운영 재현 · 실제 기록 대비** 카드에 같은 정의로 계산한 실제 트럭 대기와의 차이(%)가 나온다 (0 에 가까울수록 현재 운영을 잘 재현).
+  실데이터 인스턴스(실데이터 가져오기 · real2026 세트)면 결과 비교표에 **실제 기록 대비** 칸(방법마다 트럭 대기 합 · makespan 의 (방법 − 실제) / 실제)과
+  맨 아래 "실제 기록 (참고)" 줄이 나온다
 - `작업 지시 동결` (기본 1개, `5분 안에 시작할 작업만`) — 재계획 때 다음 정보 전에 시작하는 작업에 더해 크레인별로 다음 1개 작업도 확정한다
   (곧 시작할 작업만 · 그 작업에 필요한 선행 작업도 함께). 작업 지시가 내려간 작업을 새 정보 때마다 바꾸지 않는 현장 운영을 반영.
   5분 = 크레인이 다음 작업으로 이동 · 집기를 시작하는 시간(약 2~4분)에 여유. 시간 제한 없이 묶으면 먼 미래 작업까지 묶여 나빠진다
@@ -230,11 +234,11 @@ AGV 사전 정보로 **AGV 도착 전에 시작한 적하 rehandle** 은 초록 
 같은 조건의 상한은 "협업 모델" 에 `AGV 도착 H분 전부터` 옵션을 켠 정적 해(모든 도착을 처음부터 앎).
 
 ```bash
-python experiments/run_rolling.py --seeds 20 --agv-info 0,15,30,60,120               # H 를 바꿔 가며 (휴리스틱만)
+python experiments/run_rolling.py --seeds 20 --agv-info 0,15,30,60,120               # H 를 바꿔 가며 (휴리스틱만, 기본은 H = 60 하나)
 python experiments/run_rolling.py --seeds 20 --sc-gaps 584,400 --lc-gaps 739,400      # 부하
 python experiments/run_rolling.py --jobs "" --sc-gaps 800 --lc-gaps 900 --mip         # 작은 인스턴스 + 롤링 협업 MIP · 정적 MIP
 python experiments/run_rolling.py --set rolling5h --agv-info 60 --mip-only --workers 16 --threads 4   # MIP 네 가지만 (롤링·정적 × 비교군·협업)
-python experiments/run_rolling.py --instance-files 'data/instances/*.json' --agv-info 60 --mip-only  # 실데이터 구간: 실제 기록 대비 %
+python experiments/run_rolling.py --instance-files 'data/instances/*.json' --mip-only  # 실데이터 구간: 실제 기록(트럭 대기 · makespan) 대비
 python experiments/run_rolling.py --set rolling5h --mip-only --freeze 0 --no-warm-start             # 동결 · 초기해 끄고 비교
 ```
 
@@ -271,7 +275,9 @@ python experiments/run_rolling.py --set rolling5h --mip --workers 8 --threads 8 
 `--workers` 로 돌리면 끝난 인스턴스까지 `results_partial.csv` 에 계속 저장된다.
 
 결과 표: 롤링 비교군 대비 %(같은 정보 조건의 현재 운영 대비), 실제 기록 대비 %(실데이터만), 무지원 대비 %(롤링 · 지원 없음 대비), 정보 손실 %(같은 방법의 정적 해 대비), 적하 / 반출 지원 수,
-AGV 도착 전에 끝낸 적하 rehandle 수, AGV 대기 · 외부트럭 대기, 재계획 횟수.
+AGV 도착 전에 끝낸 적하 rehandle 수, AGV 대기 · 외부트럭 대기, makespan, 교환 쌍(보완 ver, 괄호 = 적하끼리), 재계획 횟수.
+실데이터 인스턴스면 report.md 아래에 **실제 기록과 비교** 표가 따로 나온다: 방법마다 트럭 대기 합 · AGV 대기 · 외부트럭 대기 · makespan 을
+같은 구간의 실제 값과 나란히 (방법 / 실제, 실제 대비 % = (방법 − 실제) / 실제). 인스턴스별은 results.csv 의 `actual_*` · `vs_actual*` 열.
 
 ## 6. 저장 위치
 

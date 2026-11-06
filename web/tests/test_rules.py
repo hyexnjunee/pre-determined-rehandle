@@ -414,7 +414,8 @@ class RulesTests(unittest.TestCase):
                     model.dispose()
 
     def test_coop_swap(self):
-        """보완 ver (본 작업 순서 교환): K=0 이면 협업 모델과 같은 값 · K=2 면 같거나 좋아짐 · 적하끼리 순서 유지 ·
+        """보완 ver (본 작업 순서 교환): K=0 이면 협업 모델과 같은 값 · K=2 면 같거나 좋아짐 ·
+        기본은 적하끼리도 교환 가능(고정 없음), swap_fixed_ld 를 켜면 적하 순서 유지 · 고정 없음이 같거나 좋음 ·
         독립 검사(rules.verify, swap 허용) 통과 · 해를 보완 ver 노트북에 고정해 같은 목적값 · 롤링판도 제약 통과."""
         from app.generator import LD_PRESET
         from app.registry import build_registry
@@ -434,12 +435,21 @@ class RulesTests(unittest.TestCase):
             self.assertAlmostEqual(k0.objective,co.objective,places=4)
             self.assertEqual(k0.metrics["n_swaps"],0)
             self.assertLessEqual(k2.objective,co.objective+1e-6)
+            self.assertEqual(k2.metrics["swap_fixed_types"],[])          # 기본: 고정 없음
+            self.assertIn("n_swaps_ld",k2.metrics)
+            # 적하끼리 고정을 켜면: 적하 순서 유지, 고정 없음(기본)이 같거나 좋음
+            k2f=self.solve(reg["coop_swap"],inst,swap_window=2,swap_fixed_ld=True,**common)
+            self.assertEqual(k2f.status,"OPTIMAL")
+            self.assertEqual(k2f.metrics["swap_fixed_types"],["LD"]); self.assertEqual(k2f.metrics["n_swaps_ld"],0)
+            self.assertLessEqual(k2.objective,k2f.objective+1e-6)
+            self.assertLessEqual(k2f.objective,co.objective+1e-6)
             # 독립 검사: 노트북 제약을 swap 허용으로
             tasks,_,prec=tasks_of(inst,True,True,3600)
-            seqs={c:[e.task for e in sorted(k2.schedule,key=lambda e:e.start) if e.crane==c] for c in ("SC","LC")}
-            starts={e.task:e.start for e in k2.schedule}
-            self.assertEqual(verify(inst,tasks,seqs,prec,starts,True,{"fixed":("LD",),"window":2}),[],seed)
-            lds=[e.task for e in sorted(k2.schedule,key=lambda e:e.start) if e.job_type=="LD" and e.kind=="main"]
+            for res,fixed in ((k2,()),(k2f,("LD",))):
+                seqs={c:[e.task for e in sorted(res.schedule,key=lambda e:e.start) if e.crane==c] for c in ("SC","LC")}
+                starts={e.task:e.start for e in res.schedule}
+                self.assertEqual(verify(inst,tasks,seqs,prec,starts,True,{"fixed":fixed,"window":2}),[],(seed,fixed))
+            lds=[e.task for e in sorted(k2f.schedule,key=lambda e:e.start) if e.job_type=="LD" and e.kind=="main"]
             self.assertEqual(lds,[j.id for j in inst.seq_sc if j.type=="LD"])
             # 해를 보완 ver 노트북에 고정 → 같은 목적값
             adapter=CoopSwap(nbdir)
@@ -462,13 +472,38 @@ class RulesTests(unittest.TestCase):
             only=self.solve(reg["coop_swap"],inst,swap_window=2,allow_assist=False,**common)
             self.assertTrue(only.feasible)
             self.assertFalse(any(e.assisted for e in only.schedule))
-            # 롤링판: 제약 통과 · 적하 순서 유지
+            # 롤링판: 제약 통과 (기본 고정 없음) · 적하끼리 고정을 켜면 적하 순서 유지
             r=self.solve(reg["rolling_coop_swap"],inst,objective="truck_wait",agv_info_min=60,freeze_tasks=1,
                          draw_notebook_figure=False,time_limit=10,threads=2,swap_window=2)
             self.assertTrue(r.feasible,(seed,r.error))
-            lds=[e.task for e in sorted(r.schedule,key=lambda e:e.start) if e.job_type=="LD" and e.kind=="main"]
+            self.assertIn("n_swaps",r.metrics); self.assertIn("n_swaps_ld",r.metrics)
+            rf=self.solve(reg["rolling_coop_swap"],inst,objective="truck_wait",agv_info_min=60,freeze_tasks=1,
+                          draw_notebook_figure=False,time_limit=10,threads=2,swap_window=2,swap_fixed_ld=True)
+            self.assertTrue(rf.feasible,(seed,rf.error))
+            lds=[e.task for e in sorted(rf.schedule,key=lambda e:e.start) if e.job_type=="LD" and e.kind=="main"]
             self.assertEqual(lds,[j.id for j in inst.seq_sc if j.type=="LD"])
-            self.assertIn("n_swaps",r.metrics)
+            self.assertEqual(rf.metrics["n_swaps_ld"],0)
+
+    def test_default_options(self):
+        """기본값 (2026-11-06): 적하 rehandle 은 AGV 도착 60분 전부터 (체크 없이) · 보완 ver 는 고정 유형 없음."""
+        from app.methods.coop import CoopRehandle, ld_lookahead_seconds
+        from app.methods.coop_swap import CoopSwap, swap_fixed_types
+        from app.methods.window_rule import WindowRule
+        from app.methods.rules import AssistRule
+        self.assertEqual(ld_lookahead_seconds({}),3600.0)
+        self.assertIsNone(ld_lookahead_seconds({"ld_known":False}))
+        for cls in (CoopRehandle,WindowRule,AssistRule):
+            self.assertIs(cls.options["ld_known"]["default"],True,cls)
+            self.assertEqual(cls.options["ld_lookahead_min"]["default"],60,cls)
+        self.assertIs(CoopSwap.options["swap_fixed_ld"]["default"],False)
+        self.assertEqual(swap_fixed_types({}),())
+        self.assertEqual(swap_fixed_types({"swap_fixed_ld":True,"swap_fixed_ds":True}),("LD","DS"))
+        opts={k:v["default"] for k,v in CoopRehandle.options.items()}
+        sw=CoopRehandle.__new__(CoopRehandle).switches(opts)
+        self.assertEqual(sw["LD_LOOKAHEAD"],"3600.0")
+        inst=generate(seed=3,n_ds=2,n_ld=3,n_gi=1,n_go=2,rh_prob=1,rh_max=2,sc_gap=60,lc_gap=80)
+        r=self.solve(AssistRule(),inst,objective="truck_wait",draw_notebook_figure=False,time_limit=5)
+        self.assertEqual(r.metrics.get("ld_lookahead"),3600.0)
 
     def test_verify_swap_rules(self):
         """rules.verify: swap=None 이면 순서가 바뀌면 오류, swap 허용이면 통과, 적하끼리 뒤바뀌면 오류, 창 밖이면 오류."""

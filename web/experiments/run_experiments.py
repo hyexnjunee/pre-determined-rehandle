@@ -111,8 +111,12 @@ def run_method(reg, key, inst, a):
         opt.update(time_limit=a.mip_time, threads=a.threads, mip_gap=0.0)
     if key in ("coop", "window_rule", "window_rule_v2", "window_nohelp"):
         opt["rh_after_arrival"] = not a.rh_before_arrival
-    if a.ld_lookahead is not None and key in ("coop", "window_rule", "window_rule_v2", "window_nohelp"):
-        opt.update(ld_known=True, ld_lookahead_min=a.ld_lookahead)
+    if key in ("coop", "window_rule", "window_rule_v2", "window_nohelp", "assist_lonrem"):
+        # 기본: 적하 rehandle 은 AGV 도착 60분 전부터 가능 (--ld-lookahead H, 끄기는 --no-ld-lookahead)
+        if a.no_ld_lookahead:
+            opt["ld_known"] = False
+        else:
+            opt.update(ld_known=True, ld_lookahead_min=a.ld_lookahead)
     if key == "window_nohelp":
         opt.update(help_go=False, help_ld=False)
     if key in ("window_rule", "window_rule_v2") and a.guard:
@@ -153,8 +157,10 @@ def main():
     ap.add_argument("--mip-time", type=float, default=120)
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--rh-before-arrival", action="store_true", help="RH_AFTER_ARRIVAL 끄기 (rehandle 을 트럭 오기 전에도)")
-    ap.add_argument("--ld-lookahead", type=float, default=None,
-                    help="적하 rehandle 을 AGV 도착 H분 전부터 허용 (협업 MIP · 창 규칙의 LD_LOOKAHEAD). 생략하면 끔")
+    ap.add_argument("--ld-lookahead", type=float, default=60,
+                    help="적하 rehandle 을 AGV 도착 H분 전부터 허용 (협업 MIP · 창 규칙의 LD_LOOKAHEAD, 기본 60분)")
+    ap.add_argument("--no-ld-lookahead", action="store_true",
+                    help="LD_LOOKAHEAD 끄기 (적하 rehandle 도 RH_AFTER_ARRIVAL 을 따름)")
     ap.add_argument("--preset", default="real", choices=["real", "ld", "queue"],
                     help="grid 묶음의 기본값: real 보정값 / ld 적하 rehandle 실험값 / queue 대기열 (간격은 --sc-gaps --lc-gaps 로 덮어씀)")
     ap.add_argument("--guard", action="store_true", help="창 규칙 목적값 보호 켜기")
@@ -254,7 +260,7 @@ def summarize(rows):
 def report(summary, a):
     f = lambda v, d=1: "–" if v is None else f"{v:.{d}f}"
     lines = [f"# 비교 실험 결과 ({datetime.now():%Y-%m-%d %H:%M})", "",
-             f"목적함수 `{a.objective}` · RH_AFTER_ARRIVAL={not a.rh_before_arrival} · LD_LOOKAHEAD={'끔' if a.ld_lookahead is None else f'{a.ld_lookahead:g}분'}"
+             f"목적함수 `{a.objective}` · RH_AFTER_ARRIVAL={not a.rh_before_arrival} · LD_LOOKAHEAD={'끔' if a.no_ld_lookahead else f'{a.ld_lookahead:g}분'}"
              f" · 창 규칙 목적값 보호={a.guard} · MIP 제한 {a.mip_time:g} s", "",
              "| 묶음 | 조건 | 방법 | n | 무지원 대비 % | 비교군 MIP 대비 % | 협업 MIP 대비 RPD % (n) | 지원 RH / RH | 겹침 s | 기다림 s | 시간 s |",
              "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|"]

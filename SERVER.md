@@ -204,6 +204,7 @@ rsync -av ~/workspace/2026/Pre-Determined_Rehandle/data/ hyeonjun@10.92.62.51:~/
 
 ```bash
 # Mac — 세트 설치 (analysis/instance_sets_2026/out → web/data/instance_sets/real2026_3h · real2026_5h)
+#   (2026-11-06 (2) 실제 기록 항목을 늘려 다시 만듦 — 전에 보냈어도 아래 rsync 를 한 번 더)
 cd ~/workspace/2026/Pre-Determined_Rehandle && python3 web/experiments/make_real_sets.py
 # Mac → 서버 (학교 밖이면 VPN)
 rsync -av web/data/instance_sets/real2026_3h web/data/instance_sets/real2026_5h \
@@ -214,14 +215,18 @@ rsync -av web/data/instance_sets/real2026_3h web/data/instance_sets/real2026_5h 
 
 ```bash
 # 서버 — ① 3시간: MIP 네 가지 + 보완 ver 세 가지 (교환만 · 협업+교환 · 롤링 협업+교환)
+#   기본: AGV 정보 60분 전 · 적하끼리도 교환 가능 (적하 고정과 비교하려면 같은 명령에 --swap-fixed-ld 를 붙여 이름만 바꿔 한 번 더)
 bash deploy/run_experiment.sh real3h_mip --set real2026_3h --mip-only --swap --swap-window 2 \
-     --agv-info 60 --replan event --workers 8 --threads 8 --mip-time 900 --replan-time 10
+     --replan event --workers 8 --threads 8 --mip-time 900 --replan-time 10
 # ② 3시간 휴리스틱 · AGV 정보 시간 민감도 (빠름)
 bash deploy/run_experiment.sh real3h_heur --set real2026_3h --agv-info 30,60,90 --workers 16 --threads 1
 # ③ 5시간 (오래 걸림)
 bash deploy/run_experiment.sh real5h_mip --set real2026_5h --mip-only --swap --swap-window 2 \
-     --agv-info 60 --replan event --workers 8 --threads 8 --mip-time 1800 --replan-time 10
+     --replan event --workers 8 --threads 8 --mip-time 1800 --replan-time 10
 ```
+
+- **실제 기록과 비교**: 결과 `report.md` 아래에 "실제 기록과 비교 (실데이터 인스턴스)" 표 — 방법마다 트럭 대기 합 · AGV · 외부트럭 · makespan 을
+  같은 구간의 실제 값과 나란히 (실제 대비 % = (방법 − 실제) / 실제, 음수 = 실제보다 적음). 인스턴스별은 `results.csv` 의 `actual_*` · `vs_actual*` 열
 
 - 한 묶음만 먼저: `--set-group L1` (L1 · L2 · L3 · L4 · R)
 - 방법 키: `full_base`(비교군) · `full_coop`(협업) · `full_swaponly`(교환만) · `full_swap`(협업+교환) · `roll_base` · `roll_coop` · `roll_swap`

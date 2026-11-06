@@ -247,6 +247,7 @@
   .impr .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px}
   .impr .sub{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
   .impr .good{color:var(--ok)} .impr .bad{color:var(--err)}
+  .vsact .good{color:var(--ok)} .vsact .warn{color:#b54708}
   .seqline{font-size:12px;line-height:1.9}
   .seqline .tk{display:inline-block;border-radius:4px;padding:0 5px;margin:1px 0;background:#f1f3f6}
   .seqline .tk.rh{background:#eef0f3;color:#56606c}
@@ -1636,7 +1637,17 @@ function actualRowHTML(act){
   return `<tr style="background:#f7f8fa"><td><span class="muted">실제 기록 (참고)</span></td><td><span class="pill mute">기록</span></td>
     <td class="num muted">${fmt(act.makespan)}</td><td class="num muted">${fmt(act.truck_wait_sum)}</td>
     <td class="num muted">${fmt(act.truck_wait_internal)}</td><td class="num muted">${fmt(act.truck_wait_external)}</td>
-    <td class="num muted">${fmt(act.go_wait_sum)}</td><td colspan="8" class="small muted">${esc(act.note||'')}</td></tr>`;
+    <td class="num muted">${fmt(act.go_wait_sum)}</td><td class="num small muted">기준</td><td colspan="9" class="small muted">${esc(act.note||'')}</td></tr>`;
+}
+// 실데이터: 방법 값 vs 같은 구간 실제 기록 ((방법 − 실제) / 실제, 음수 = 실제보다 적음)
+function vsActualHTML(r, act){
+  if (r.makespan == null) return '–';
+  const p = (x, a) => (x == null || !a) ? null : 100 * (x - a) / a;
+  const sg = v => v == null ? '–' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + '%';
+  const w = p(M(r).truck_wait_sum, act.truck_wait_sum), ms = p(r.makespan, act.makespan);
+  const cls = v => v == null ? '' : (v < 0 ? 'good' : 'warn');
+  return `<span class="vsact" title="트럭 대기 합 ${fmt(M(r).truck_wait_sum)} vs 실제 ${fmt(act.truck_wait_sum)} · makespan ${fmt(r.makespan)} vs 실제 ${fmt(act.makespan)}">`
+       + `대기 <b class="${cls(w)}">${sg(w)}</b><br>ms <b class="${cls(ms)}">${sg(ms)}</b></span>`;
 }
 function compareTableHTML(rs, act){
   const ok = rs.filter(r => r.makespan != null);
@@ -1644,9 +1655,10 @@ function compareTableHTML(rs, act){
   const bestOf = k => { const v = ok.map(r=>M(r)[k]).filter(v=>typeof v==='number'); return v.length ? Math.min(...v) : null; };
   const bestTw = bestOf('truck_wait_sum'), bestGw = bestOf('go_wait_sum');
   const B = (r,k,b) => (M(r)[k]===b && ok.length>1) ? 'best' : '';
+  const hasAct = !!(act && act.makespan != null && act.truck_wait_sum != null);
   return `<thead><tr>
       <th>모델</th><th>상태</th><th class="num">makespan</th><th class="num">Σ 트럭 대기</th>
-      <th class="num">내부 DS·LD</th><th class="num">외부 GI·GO</th><th class="num">GO만</th><th class="num">지원 RH</th><th class="num" title="지원 rehandle 시간 중 원래 크레인이 다른 작업을 하던 시간 / 원래 크레인이 rehandle 을 기다린 시간">겹침 / 대기</th><th class="num">MIP 대비</th><th class="num">목적값</th>
+      <th class="num">내부 DS·LD</th><th class="num">외부 GI·GO</th><th class="num">GO만</th>${hasAct ? '<th class="num" title="같은 구간 실제 기록 대비 (방법 − 실제) / 실제. 음수 = 실제보다 적음">실제 기록 대비</th>' : ''}<th class="num">지원 RH</th><th class="num" title="지원 rehandle 시간 중 원래 크레인이 다른 작업을 하던 시간 / 원래 크레인이 rehandle 을 기다린 시간">겹침 / 대기</th><th class="num">MIP 대비</th><th class="num">목적값</th>
       <th class="num">bound</th><th class="num">gap</th><th class="num">solve(s)</th>
       <th class="num">vars</th><th class="num">constrs</th></tr></thead><tbody>
     ${rs.map(r => `<tr>
@@ -1655,13 +1667,14 @@ function compareTableHTML(rs, act){
       <td class="num ${B(r,'truck_wait_sum',bestTw)}">${fmt(M(r).truck_wait_sum)}</td>
       <td class="num">${fmt(M(r).truck_wait_internal)}</td><td class="num">${fmt(M(r).truck_wait_external)}</td>
       <td class="num ${B(r,'go_wait_sum',bestGw)}">${fmt(M(r).go_wait_sum)}</td>
+      ${hasAct ? `<td class="num small">${vsActualHTML(r, act)}</td>` : ''}
       <td class="num">${M(r).n_rehandles!=null ? `${M(r).n_assisted||0} / ${M(r).n_rehandles}` : '–'}</td>
       <td class="num small">${M(r).n_assisted ? `${fmt(M(r).assist_overlap)} / ${fmt(M(r).assist_home_wait)}` : '–'}</td>
       <td class="num small">${mipCmp(r)}</td>
       <td class="num">${fmt(r.objective)}</td><td class="num">${fmt(r.best_bound)}</td>
       <td class="num">${r.mip_gap==null?'–':(r.mip_gap*100).toFixed(2)+'%'}</td>
       <td class="num">${fmt(r.solve_time)}</td><td class="num">${fmt(r.num_vars)}</td>
-      <td class="num">${fmt(r.num_constraints)}</td></tr>`).join('')}${actualRowHTML(act)}</tbody>`;
+      <td class="num">${fmt(r.num_constraints)}</td></tr>`).join('')}${hasAct ? actualRowHTML(act) : ''}</tbody>`;
 }
 
 // 롤링 결과와 짝지을 정적(정보를 처음부터 다 아는) 결과

@@ -438,16 +438,22 @@ class RollingMethod(Method):
             freeze_tasks=freeze, freeze_window_min=(fwin / 60.0) if freeze else None, frozen_tasks=n_frozen,
             warm_start=warm, warm_starts=n_warm)
         if self.swap:
-            inv, shift = 0, 0
+            inv, inv_ld, shift = 0, 0, 0
             for c, exp in (("SC", seqs["SC"]), ("LC", seqs["LC"])):
                 real = [k for k in rseqs[c] if tasks[k].type != "RH"]
                 pos = {t: k for k, t in enumerate(exp)}
-                inv += sum(1 for ia, ta in enumerate(real) for tb in real[ia + 1:] if pos[ta] > pos[tb])
+                for ia, ta in enumerate(real):
+                    for tb in real[ia + 1:]:
+                        if pos[ta] > pos[tb]:
+                            inv += 1
+                            inv_ld += tasks[ta].type == "LD" and tasks[tb].type == "LD"
                 shift = max([shift] + [abs(k - pos[t]) for k, t in enumerate(real)])
             K = int(float(inner_opt.get("swap_window", 2) or 0))
-            res.metrics.update(swap_window=K, n_swaps=inv, max_shift=shift, swap_fixed_types=list(swap_cfg["fixed"]))
-            res.notes.append(f"순서 교환 (보완 ver): 재계획마다 공개된 작업 안에서 {K}칸 교환 허용, "
-                             f"{'·'.join(swap_cfg['fixed']) or '없음'}끼리는 고정. 최종 순서에서 뒤바뀐 본 작업 쌍 {inv}개, 최대 {shift}칸 이동.")
+            res.metrics.update(swap_window=K, n_swaps=inv, n_swaps_ld=inv_ld, max_shift=shift,
+                               swap_fixed_types=list(swap_cfg["fixed"]))
+            fixed_txt = (f"{'·'.join(swap_cfg['fixed'])}끼리는 고정" if swap_cfg["fixed"] else "고정 유형 없음 (적하끼리도 교환 가능)")
+            res.notes.append(f"순서 교환 (보완 ver): 재계획마다 공개된 작업 안에서 {K}칸 교환 허용, {fixed_txt}. "
+                             f"최종 순서에서 뒤바뀐 본 작업 쌍 {inv}개 (적하끼리 {inv_ld}개), 최대 {shift}칸 이동.")
         if freeze:
             res.notes.append(f"작업 지시 동결: 재계획 때 크레인별로 다음 {freeze}개 작업(과 그 선행 작업)을 더 확정"
                              + (f", {fwin / 60:g}분 안에 시작할 작업만" if fwin else "") + f" — 동결로 확정한 작업 {n_frozen}개.")

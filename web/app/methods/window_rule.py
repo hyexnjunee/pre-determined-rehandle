@@ -177,9 +177,9 @@ class WindowRule(Method):
         "objective_guard": {"type": "checkbox", "default": False,
                             "label": "목적값 보호 · 목적값이 나빠지는 지원은 하지 않음 (규칙 밖)"},
         "draw_notebook_figure": {"type": "checkbox", "default": True, "label": "노트북 원본 차트 그리기"},
-        "ld_known": {"type": "checkbox", "default": False,
-                     "label": "적하(LD) rehandle 은 AGV 도착 H분 전부터 미리 가능 (LD_LOOKAHEAD)"},
-        "ld_lookahead_min": {"type": "number", "default": 30, "label": "H: AGV 도착을 미리 아는 시간 (분)"},
+        "ld_known": {"type": "checkbox", "default": True,
+                     "label": "적하(LD) rehandle 은 AGV 도착 H분 전부터 미리 가능 (LD_LOOKAHEAD, 기본 켬)"},
+        "ld_lookahead_min": {"type": "number", "default": 60, "label": "H: AGV 도착을 미리 아는 시간 (분, 기본 60)"},
         "rollout": {"type": "checkbox", "default": True,
                     "label": "간섭 순서를 끝까지 계산해 보고 결정 (끄면 빠른 탐욕 디코더)"},
     }

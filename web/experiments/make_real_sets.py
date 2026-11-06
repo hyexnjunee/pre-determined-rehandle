@@ -53,10 +53,13 @@ def main():
                 json.dump(inst.to_dict(), f, ensure_ascii=False)
             st = stats(inst)
             rows.append({"id": inst.id, "key": m.get("wid"), "name": inst.name, "group": m.get("group"),
-                         "label": (m.get("group_name") or "").split(" ", 1)[-1],   # "L1 목표 · …" → "목표 · …" (그룹 코드는 group 에) "desc": f"{m.get('block')} {(m.get('window') or {}).get('start')}",
+                         # "L1 목표 · …" → "목표 · …" (그룹 코드는 group 에)
+                         "label": (m.get("group_name") or "").split(" ", 1)[-1],
+                         "desc": f"{m.get('block')} {(m.get('window') or {}).get('start')}",
                          "seed": None, "rho_target": [ws.get("sc_busy"), ws.get("lc_busy")],
                          "jobs": inst.num_jobs(), **st,
                          "actual_wait": (m.get("actual") or {}).get("truck_wait_sum"),
+                         "actual_makespan": (m.get("actual") or {}).get("makespan"),
                          "btb_out": (m.get("btb") or {}).get("out_moves"), "spike_0709": m.get("spike_0709")})
         rows.sort(key=lambda r: (GROUP_ORDER.index(r["group"]) if r["group"] in GROUP_ORDER else 9, r["key"] or ""))
         with open(os.path.join(folder, "index.json"), "w", encoding="utf-8") as f:

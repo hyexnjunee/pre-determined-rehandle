@@ -359,7 +359,7 @@ body.showall .pager{display:none}
   <div class="eq opt">
     <div class="head"><span class="name">적하 rehandle 사전 정보 (AGV 도착을 미리 앎)</span><span class="tag opt">옵션 · LD_LOOKAHEAD</span><span class="tag">코드 (9)</span></div>
     <div class="math">\[ a_r\ =\ \max\bigl(0,\ a_{\pi(r)}-H\bigr) \qquad \forall\, r\in R,\ \pi(r)\in M^{LD} \]</div>
-    <p class="desc">적하(LD)는 AGV·내부트럭 도착 시점을 \(H\) 전부터 안다고 보고, 그만큼 미리 rehandle 을 할 수 있게 한다. 반출(GO)은 외부트럭 도착을 미리 모르므로 위의 <code>RH_AFTER_ARRIVAL</code> 을 그대로 따른다. 기본 None 이면 LD 도 <code>RH_AFTER_ARRIVAL</code> 을 따른다 (예전과 같음). 선행연구 Park et al.(2010) 의 실시간 twin RMG 스케줄링 설정을 참고했다.</p>
+    <p class="desc">적하(LD)는 AGV·내부트럭 도착 시점을 \(H\) 전부터 안다고 보고, 그만큼 미리 rehandle 을 할 수 있게 한다. 반출(GO)은 외부트럭 도착을 미리 모르므로 위의 <code>RH_AFTER_ARRIVAL</code> 을 그대로 따른다. 기본 3600 s = AGV 도착 60분 전부터 앎 (2026-11-06 부터 기본, 웹 · 실험도 기본 켬 · 60분). None 이면 LD 도 <code>RH_AFTER_ARRIVAL</code> 을 따른다. 선행연구 Park et al.(2010) 의 실시간 twin RMG 스케줄링 설정을 참고했다.</p>
   </div>
   <div class="eq">
     <div class="head"><span class="name">Rehandle → 본 작업 선행</span><span class="tag">원본 유지</span><span class="tag">코드 (11)</span></div>

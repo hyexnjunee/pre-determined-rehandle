@@ -24,12 +24,15 @@
 
 현실적인 세팅 (2026-11-02): 롤링은 기본 '새 정보마다' 재계획 + 작업 지시 동결(--freeze 1, --freeze-window 5분)
   + MIP 는 직전 계획을 초기해로(--no-warm-start 로 끔). --mip-only 면 MIP 네 가지(roll_base · roll_coop · full_base · full_coop)만.
-  실데이터 인스턴스(--instance-files 'data/instances/*.json', 웹 '실데이터 가져오기' 로 저장한 것)는 실제 기록 대비 % 도 남김
+  실데이터 인스턴스(--instance-files 'data/instances/*.json', 웹 '실데이터 가져오기' 로 저장한 것, --set real2026_3h · real2026_5h)는
+  실제 기록(같은 구간에서 실제로 생긴 트럭 대기 · makespan)을 행마다 같이 남기고 report.md 에 '실제 기록과 비교' 표를 따로 만든다
+기본값 (2026-11-06): H = 60분 (--agv-info 60), 보완 ver 는 적하끼리도 교환 가능 (--swap-fixed-ld 로 고정)
 
 지표
   gain_vs_nohelp  (롤링 무지원 − 방법) / 롤링 무지원 × 100    지원으로 줄어든 트럭 대기
   gain_vs_rollbase (롤링 비교군 − 방법) / 롤링 비교군 × 100   같은 정보 조건의 현재 운영 대비
   vs_actual       (방법 트럭 대기 − 실제 기록) / 실제 기록 × 100 (실데이터 인스턴스만, 롤링 비교군이 0 에 가까울수록 현재 운영 재현)
+  vs_actual_makespan / _agv / _et   makespan · AGV 대기 · 외부트럭 대기의 같은 비율 (실제 값은 actual_makespan · actual_wait · actual_agv · actual_et)
   voi_vs_full     (방법 − 같은 계열 정적) / 정적 × 100        정보를 늦게 알아 잃은 몫 (roll_* ↔ full_*)
   ld_assist, go_assist   반대편 크레인이 대신 한 적하 / 반출 rehandle 수
   ld_pre         AGV 도착 전에 끝낸 적하 rehandle 수 (미리 해둔 것)
@@ -98,9 +101,7 @@ def instances(a):
             with open(path, encoding="utf-8") as f:
                 inst = Instance.from_dict(json.load(f))
             if inst.num_jobs():
-                act = (inst.meta or {}).get("actual") or {}
-                yield {"cond": inst.name, "file": os.path.basename(path),
-                       "actual_wait": act.get("truck_wait_sum")}, inst
+                yield {"cond": inst.name, "file": os.path.basename(path)}, inst
         return
     if a.set:
         from app.instance_sets import load_set
@@ -109,10 +110,8 @@ def instances(a):
             if a.set_group and r["group"] != a.set_group:
                 continue
             inst = d["instances"][r["id"]]
-            act = ((inst.meta or {}).get("actual") or {}).get("truck_wait_sum")
             yield {"cond": f"{r['group']} · {r['label']}", "set_id": r["id"], "seed": r.get("seed"),
-                   "rho_sc": r.get("rho_sc"), "rho_lc": r.get("rho_lc"),
-                   **({"actual_wait": act} if act else {})}, inst
+                   "rho_sc": r.get("rho_sc"), "rho_lc": r.get("rho_lc")}, inst
         return
     preset = {"ld": generator.LD_PRESET, "rolling": generator.ROLLING_PRESET, "real": generator.REAL_PRESET,
               "queue": generator.QUEUE_PRESET}[a.preset]
@@ -164,13 +163,15 @@ def run(reg, name, inst, H, a, replan="event"):
         if name == "full_swaponly":
             opt.update(allow_assist=False)
     if name in SWAP:
-        opt.update(swap_window=a.swap_window, swap_fixed_ld=True, swap_fixed_ds=a.swap_fixed_ds)
+        opt.update(swap_window=a.swap_window, swap_fixed_ld=a.swap_fixed_ld, swap_fixed_ds=a.swap_fixed_ds)
     t = time.time()
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         r = m.solve(inst, opt)
     met = r.metrics or {}
     out = {"method": name, "status": r.status, "objective": r.objective if r.feasible else None,
+           "makespan": round(r.makespan, 1) if r.feasible and r.makespan is not None else None,
            "sec": round(time.time() - t, 3), "replans": met.get("replans"),
+           "n_swaps": met.get("n_swaps"), "n_swaps_ld": met.get("n_swaps_ld"),
            "delayed": met.get("delayed_in_execution"), "frozen": met.get("frozen_tasks"),
            "n_assisted": met.get("n_assisted"), "gap": r.mip_gap,
            "error": (r.error or "").strip().splitlines()[-1][:200] if r.error else ""}
@@ -202,6 +203,22 @@ def pct(base, x):
     return None if base is None or x is None or not base else 100.0 * (base - x) / base
 
 
+def vs(act, x):
+    """(방법 − 실제) / 실제 × 100. 음수 = 실제보다 적음(좋음)."""
+    return None if act is None or x is None or not act else 100.0 * (x - act) / act
+
+
+def actual_of(inst):
+    """실데이터 인스턴스의 실제 기록 (realdata.build 의 meta.actual). 없으면 {}."""
+    act = (inst.meta or {}).get("actual") or {}
+    if not act or act.get("truck_wait_sum") is None:
+        return {}
+    by = act.get("truck_wait_by_type") or {}
+    return {"actual_wait": act.get("truck_wait_sum"), "actual_agv": act.get("truck_wait_internal"),
+            "actual_et": act.get("truck_wait_external"), "actual_ld": by.get("LD"),
+            "actual_makespan": act.get("makespan")}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--methods", default=None, help="쉼표 구분. 기본: roll_nohelp,roll_v2,full_v2 (+ --mip 이면 roll_coop,full_coop)")
@@ -210,14 +227,17 @@ def main():
     ap.add_argument("--swap", action="store_true",
                     help="보완 ver(본 작업 순서 교환)도: roll_swap · full_swap(협업+교환) · full_swaponly(교환만)")
     ap.add_argument("--swap-window", type=int, default=2, help="순서 교환 범위 K (원래 순서로 몇 칸 안까지)")
-    ap.add_argument("--swap-fixed-ds", action="store_true", help="양하끼리도 순서 고정 (적하끼리는 항상 고정)")
+    ap.add_argument("--swap-fixed-ld", action="store_true",
+                    help="적하끼리는 순서 고정 (선박 적재 순서를 꼭 지킬 때). 기본은 적하끼리도 교환 가능")
+    ap.add_argument("--swap-fixed-ds", action="store_true", help="양하끼리도 순서 고정")
     ap.add_argument("--instance-files", default="", help="저장한 인스턴스 JSON (glob). 실데이터면 실제 기록 대비 % 도 계산")
     ap.add_argument("--freeze", type=int, default=1, help="작업 지시 동결: 재계획 때 크레인별로 더 확정할 작업 수 (0 = 끔)")
     ap.add_argument("--freeze-window", type=float, default=5, help="동결은 이 시간(분) 안에 시작할 작업만 (0 = 제한 없음)")
     ap.add_argument("--no-warm-start", action="store_true", help="롤링 MIP 에서 직전 계획을 초기해로 쓰지 않음")
     ap.add_argument("--replan", default="event",
                     help="작업 투입(재계획) 방식 목록: event = 새 정보마다, 숫자 = 그 분 간격 (예: event,15,30,60)")
-    ap.add_argument("--agv-info", default="0,30,60,120", help="AGV 정보를 미리 아는 시간 H (분) 목록")
+    ap.add_argument("--agv-info", default="60",
+                    help="AGV 정보를 미리 아는 시간 H (분) 목록. 기본 60. H 를 바꿔 보려면 예: 0,30,60,120")
     ap.add_argument("--preset", default="ld", choices=["ld", "rolling", "real", "queue"],
                     help="ld = 적하 rehandle 실험값 (--jobs 로 개수 덮어씀), rolling = ld × 작업 2배")
     ap.add_argument("--jobs", default="8,12,8,8",
@@ -312,14 +332,18 @@ def process_instance(reg, a, methods, iid, info, inst):
             res = {m: (static[m] if m in static else run(reg, m, inst, H, a, rp)) for m in methods}
             base = res.get("roll_nohelp")
             rbase = res.get("roll_base")
-            act = ((inst.meta or {}).get("actual") or {}).get("truck_wait_sum")
+            act = actual_of(inst)
             for m, r in res.items():
                 full = res.get(PAIR.get(m, ""))
                 rows.append({"instance": iid, **info, "H": H, "replan": replan_label(rp),
                              "jobs": inst.num_jobs(), "rh_ld": n_ld, "rh_go": n_go,
                              **r, "gain_vs_nohelp": pct(base and base["objective"], r["objective"]),
                              "gain_vs_rollbase": pct(rbase and rbase["objective"], r["objective"]),
-                             "vs_actual": (100.0 * (r["wait_sum"] - act) / act if act and r.get("wait_sum") is not None else None),
+                             **act,
+                             "vs_actual": vs(act.get("actual_wait"), r.get("wait_sum")),
+                             "vs_actual_agv": vs(act.get("actual_agv"), r.get("agv_wait") if r.get("wait_sum") is not None else None),
+                             "vs_actual_et": vs(act.get("actual_et"), r.get("et_wait") if r.get("wait_sum") is not None else None),
+                             "vs_actual_makespan": vs(act.get("actual_makespan"), r.get("makespan")),
                              "voi_vs_full": (-pct(full["objective"], r["objective"])
                                              if full and full["objective"] and r["objective"] is not None else None)})
             line = " · ".join(f"{m} {res[m]['objective']:.0f}" if res[m]["objective"] is not None
@@ -366,6 +390,18 @@ def summarize(rows, methods):
             "gain_vs_nohelp_pct": mean([r["gain_vs_nohelp"] for r in ok if r["gain_vs_nohelp"] is not None]),
             "gain_vs_rollbase_pct": mean([r["gain_vs_rollbase"] for r in ok if r.get("gain_vs_rollbase") is not None]),
             "vs_actual_pct": mean([r["vs_actual"] for r in ok if r.get("vs_actual") is not None]),
+            "vs_actual_agv_pct": mean([r["vs_actual_agv"] for r in ok if r.get("vs_actual_agv") is not None]),
+            "vs_actual_et_pct": mean([r["vs_actual_et"] for r in ok if r.get("vs_actual_et") is not None]),
+            "vs_actual_makespan_pct": mean([r["vs_actual_makespan"] for r in ok if r.get("vs_actual_makespan") is not None]),
+            "wait_sum": mean([r["wait_sum"] for r in ok if r.get("wait_sum") is not None]),
+            "makespan": mean([r["makespan"] for r in ok if r.get("makespan") is not None]),
+            # 실제 기록: 이 방법이 풀린 인스턴스들의 실제 값 평균 (방법 값과 같은 인스턴스끼리)
+            "actual_wait": mean([r["actual_wait"] for r in ok if r.get("actual_wait") is not None]),
+            "actual_agv": mean([r["actual_agv"] for r in ok if r.get("actual_agv") is not None]),
+            "actual_et": mean([r["actual_et"] for r in ok if r.get("actual_et") is not None]),
+            "actual_makespan": mean([r["actual_makespan"] for r in ok if r.get("actual_makespan") is not None]),
+            "n_swaps": mean([r["n_swaps"] for r in ok if r.get("n_swaps") is not None]),
+            "n_swaps_ld": mean([r["n_swaps_ld"] for r in ok if r.get("n_swaps_ld") is not None]),
             "frozen": mean([r["frozen"] for r in ok if r.get("frozen") is not None]),
             "voi_vs_full_pct": mean([r["voi_vs_full"] for r in ok if r["voi_vs_full"] is not None]),
             "ld_assist": mean([r["ld_assist"] for r in ok]), "go_assist": mean([r["go_assist"] for r in ok]),
@@ -394,14 +430,16 @@ def report(summary, a):
              f" · 롤링 전체 제한 {a.rolling_total:g}s · 계획 범위 크레인별 {a.plan_jobs or '전부'}"
              f" · 작업 지시 동결 {a.freeze}개" + (f" ({a.freeze_window:g}분 안)" if a.freeze and a.freeze_window else "")
              + f" · 직전 계획 초기해 {'끔' if a.no_warm_start else '켬'}"
-             + (f" · 순서 교환(보완 ver) K={a.swap_window}, 고정 = 적하{'·양하' if a.swap_fixed_ds else ''}끼리" if any(m in SWAP for m in summary_methods(summary)) else ""), "",
-             "| 조건 | H(분) | 투입 | 방법 | 풀림/n | 목적값 | 롤링 비교군 대비 % | 무지원 대비 % | 정보 손실 % | 실제 기록 대비 % | 적하 지원 | 반출 지원 | 미리 끝낸 적하 RH | RH(LD/GO) | AGV 대기 | 그중 적하 | ET 대기 | 재계획 | 동결 | 시간 s |",
-             "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|"]
+             + (f" · 순서 교환(보완 ver) K={a.swap_window}, 고정 = {swap_fixed_text(a)}" if any(m in SWAP for m in summary_methods(summary)) else ""), "",
+             "| 조건 | H(분) | 투입 | 방법 | 풀림/n | 목적값 | makespan | 롤링 비교군 대비 % | 무지원 대비 % | 정보 손실 % | 실제 기록 대비 % | 적하 지원 | 반출 지원 | 미리 끝낸 적하 RH | RH(LD/GO) | 교환 쌍 (적하끼리) | AGV 대기 | 그중 적하 | ET 대기 | 재계획 | 동결 | 시간 s |",
+             "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|"]
     for s in summary:
+        sw = "–" if s.get("n_swaps") is None else f"{f(s['n_swaps'])} ({f(s.get('n_swaps_ld'))})"
         lines.append(f"| {s['condition']} | {s['H']:g} | {s['replan'] if s['method'].startswith('roll') else '–'} | {s['method']} | {s['solved']}/{s['n']} | {f(s['objective'], 0)} | "
+                     f"{f(s.get('makespan'), 0)} | "
                      f"{f(s['gain_vs_rollbase_pct'])} | {f(s['gain_vs_nohelp_pct'])} | {f(s['voi_vs_full_pct'])} | {f(s['vs_actual_pct'])} | "
                      f"{f(s['ld_assist'])} | {f(s['go_assist'])} | "
-                     f"{f(s['ld_pre'])} | {f(s['rh_ld'])}/{f(s['rh_go'])} | {f(s['agv_wait'], 0)} | {f(s['ld_wait'], 0)} | {f(s['et_wait'], 0)} | "
+                     f"{f(s['ld_pre'])} | {f(s['rh_ld'])}/{f(s['rh_go'])} | {sw} | {f(s['agv_wait'], 0)} | {f(s['ld_wait'], 0)} | {f(s['et_wait'], 0)} | "
                      f"{f(s['replans'])} | {f(s['frozen'])} | {f(s['sec'], 2)} |")
     lines += ["", "- 롤링 비교군 대비: 같은 정보 조건(AGV H분 전 · 외부트럭 도착 시)에서 현재 운영(지원 없음, rehandle 은 본 작업 안)을 롤링으로 푼 값 대비 감소율 (+ 면 좋아짐)",
               "- 실제 기록 대비: 실데이터 인스턴스만. (트럭 대기 합 − 실제) / 실제. 롤링 비교군이 0 에 가까우면 현재 운영을 잘 재현",
@@ -411,8 +449,38 @@ def report(summary, a):
               "- 목적값 평균은 풀린 인스턴스만 (협업 MIP 가 실패한 인스턴스가 있으면 방법끼리 직접 비교하지 말고 % 지표를 볼 것)",
               "- full_* 은 '모든 도착을 처음부터 안다' 는 비현실적 기준. 단 rehandle 허용 시각(반출 = 도착 뒤, 적하 = 도착 H분 전부터)은 롤링과 같음",
               "- 보완 ver: full_swap = 협업 + 본 작업 순서 교환, full_swaponly = 교환만 (지원 없음), roll_swap = 롤링 협업 + 교환. "
-              "적하끼리는 순서 고정 (선박 적재 순서)"]
+              f"고정 = {swap_fixed_text(a)}. 교환 쌍 = 최종 순서에서 원래 순서와 뒤바뀐 본 작업 쌍 수 (괄호 = 그중 적하끼리)"]
+    lines += actual_report(summary)
     return "\n".join(lines) + "\n"
+
+
+def swap_fixed_text(a):
+    fixed = (["적하"] if a.swap_fixed_ld else []) + (["양하"] if a.swap_fixed_ds else [])
+    return "·".join(fixed) + "끼리" if fixed else "없음 (적하끼리도 교환 가능)"
+
+
+def actual_report(summary):
+    """실데이터 인스턴스: 같은 구간의 실제 기록(트럭 대기 · makespan)과 나란히."""
+    rows = [s for s in summary if s.get("actual_wait") is not None]
+    if not rows:
+        return []
+    f = lambda v, d=0: "–" if v is None else f"{v:.{d}f}"
+    g = lambda v: "–" if v is None else f"{v:+.1f}"
+    out = ["", "## 실제 기록과 비교 (실데이터 인스턴스)", "",
+           "같은 구간에서 실제로 생긴 트럭 대기 · makespan (realdata, 같은 정의: DS·GI 는 집는 순간, LD·GO 는 내려놓는 순간 트럭 출발). "
+           "값은 조건별 평균 (방법이 풀린 인스턴스만, 실제 값도 같은 인스턴스들의 평균). 실제 대비 % = (방법 − 실제) / 실제, 음수 = 실제보다 적음", "",
+           "| 조건 | H(분) | 투입 | 방법 | n | 트럭 대기 합 (방법 / 실제) | 실제 대비 % | AGV 대기 (방법 / 실제) | 실제 대비 % | 외부트럭 대기 (방법 / 실제) | 실제 대비 % | makespan (방법 / 실제) | 실제 대비 % |",
+           "|---|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for s in rows:
+        out.append(f"| {s['condition']} | {s['H']:g} | {s['replan'] if s['method'].startswith('roll') else '–'} | {s['method']} | {s['solved']} | "
+                   f"{f(s.get('wait_sum'))} / {f(s.get('actual_wait'))} | {g(s.get('vs_actual_pct'))} | "
+                   f"{f(s.get('agv_wait'))} / {f(s.get('actual_agv'))} | {g(s.get('vs_actual_agv_pct'))} | "
+                   f"{f(s.get('et_wait'))} / {f(s.get('actual_et'))} | {g(s.get('vs_actual_et_pct'))} | "
+                   f"{f(s.get('makespan'))} / {f(s.get('actual_makespan'))} | {g(s.get('vs_actual_makespan_pct'))} |")
+    out += ["", "- 실제 기록에는 모델 밖 작업(AH · MI · MO, 구간 밖 작업)도 크레인 시간을 썼으므로 참고용. "
+            "롤링 비교군(roll_base)이 실제와 얼마나 가까운지가 '현재 운영 재현' 정도",
+            "- 인스턴스별 값은 results.csv 의 actual_wait · actual_agv · actual_et · actual_makespan · vs_actual* 열"]
+    return out
 
 
 if __name__ == "__main__":

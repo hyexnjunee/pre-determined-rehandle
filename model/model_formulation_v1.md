@@ -58,7 +58,7 @@ Jupyter 에서 노트북을 다시 저장하는 경우가 있으므로, 고치�
 - Rehandle이 포함된 쌍에만 y_ij (크레인 인덱스 없음, M(3 - y - X - X) 형태)
 - 크레인 간 간섭 순서 z 와 ETD 제약은 유지
 - 해측 TP = Bay 0, 육측 TP = Bay N+1
-- 옵션: ALLOW_ASSIST (False = Baseline), HOME_RH_FIXED, OBJ, RH_AFTER_ARRIVAL (True 면 rehandle 은 그 본 작업 트럭 도착 뒤: $a_r = a_{\pi(r)}$, 노트북 기본 False · 웹 기본 True), LD_LOOKAHEAD (적하 rehandle 은 AGV 도착 H 초 전부터: $a_r=\max(0,a_{\pi(r)}-H)$, 기본 None), CRANE_READY (크레인이 비는 시각 $\text{ready}_v$: 첫 이동 $\tau^0_{vi}=\text{ready}_v+|L_v-o_i|\hat t$, 기본 0 · 롤링 호라이즌용)
+- 옵션: ALLOW_ASSIST (False = Baseline), HOME_RH_FIXED, OBJ, RH_AFTER_ARRIVAL (True 면 rehandle 은 그 본 작업 트럭 도착 뒤: $a_r = a_{\pi(r)}$, 노트북 기본 False · 웹 기본 True), LD_LOOKAHEAD (적하 rehandle 은 AGV 도착 H 초 전부터: $a_r=\max(0,a_{\pi(r)}-H)$, 기본 3600 = 60분 · 2026-11-06 부터, 예전 None), CRANE_READY (크레인이 비는 시각 $\text{ready}_v$: 첫 이동 $\tau^0_{vi}=\text{ready}_v+|L_v-o_i|\hat t$, 기본 0 · 롤링 호라이즌용)
 
 ## 목적함수
 - OBJ = "makespan" / "truck_wait" (모든 트럭) / "go_wait" (GO 트럭만)
@@ -114,6 +114,9 @@ Jupyter 에서 노트북을 다시 저장하는 경우가 있으므로, 고치�
 - 2026-11-02 · 롤링 현실 세팅: 웹 "롤링 · 비교군 MIP"(같은 정보 조건에서 현재 운영 = 비교군 노트북을 롤링, 실데이터면 실제 기록 대비 %), 작업 지시 동결(크레인별 다음 1개 · 5분 안 시작), 재계획 1회 제한 기본 10 s, 롤링 MIP 직전 계획 초기해. 결과 카드는 롤링 방법을 롤링 비교군과 비교. `run_rolling.py --mip-only --instance-files --freeze --freeze-window --no-warm-start` (모델 변경 없음 · 노트북 그대로)
 - 2026-11-03 · 서버 결과를 GitHub 로: `deploy/push_results.sh`(서버, 끝난 웹 실행 run.json · 실험 표 → `results/`, 실데이터 실행 기본 제외) · `deploy/pull.sh`(Mac). `push.sh` 는 push 전 `git pull --rebase`, `update.sh` 는 서버 전용 커밋이 있으면 rebase. 발표자료 `docs/agv_et_decision_deck.html` (2차 데이터 현장 근거 2장, 서버 결과 반영, 수리모형 1장 + 고민 2장 → 19장) (모델 변경 없음)
 - 2026-11-06 · **보완 ver: 본 작업 순서 교환** (`model/Reha_Crane_predetermined_swap.ipynb`, 정리 `model/model_formulation_swap.md`, 원본 노트북은 그대로): `SWAP_WINDOW = K` 칸 안의 본 작업끼리 순서 교환 (적하끼리는 고정), 변수 $w_{ij}$, (5) → (5a)(5b), (11′) 을 실제 순서 기준으로. K=0 = 원본. 웹 `coop_swap` · `rolling_coop_swap`, `run_rolling.py --swap` (full_swap · full_swaponly · roll_swap), `rules.verify(swap=…)`. 실데이터 세트 `real2026_3h` · `real2026_5h` 를 웹 · 실험 세트로 (`make_real_sets.py`, 파일로만 · GitHub 제외 · 서버 rsync), push_results 는 실데이터 실험 폴더 제외. 휴리스틱 설계 노트 `model/heuristic_design.md` (지연 전파 공식 · 이득/비용 규칙 · 지배 규칙 · 완벽 지원 하한)
+- 2026-11-06 (2) · **기본값 변경**: 적하 rehandle AGV 사전 정보를 기본으로 켬 · H 60분 (노트북 두 개 `LD_LOOKAHEAD = 3600`, 웹 협업 모델 · 보완 ver · 창 규칙 v1/v2 · RH+LonRem 체크 기본 켬, `run_experiments.py --ld-lookahead` 기본 60 · `--no-ld-lookahead` 로 끔, `run_rolling.py --agv-info` 기본 60). toy 결과는 같음.
+  보완 ver 는 **적하끼리도 교환 가능이 기본** (`SWAP_FIXED_TYPES = ()`, 웹 `적하끼리는 순서 고정` 기본 끔, 실험 `--swap-fixed-ld` 로 고정) — 작은 몰림 인스턴스 8개 중 3개에서 더 좋아짐 (`model_formulation_swap.md` 4절), 지표 `n_swaps_ld`.
+  실데이터 실험에 **실제 기록 비교**: `run_rolling.py` 행마다 makespan · 실제 트럭 대기(합 · AGV · 외부트럭) · 실제 makespan · 실제 대비 %, report.md 에 "실제 기록과 비교" 표. 웹 비교표에 "실제 기록 대비" 칸 (대기 · makespan %). `realdata.py` meta.actual 에 유형별 대기 · 크레인별 makespan 추가 → real2026 다시 만듦 (작업 내용은 같음)
 - 2026-11-05 · 2차 데이터(2024-09 ~ 2026-09) 실험 인스턴스 `real2026` 104개 = 52구간 × 3시간 · 5시간 (`analysis/instance_sets_2026/`, 동원 파생물이라 GitHub 제외). 3시간 구간 지표로 L1 적하 밀림 + LC 여유 · L2 적하 rehandle 집중 · L3 둘 다 바쁨 · L4 평상시 각 10 + R 무작위 12, 2025-02-09 이후(적하 RH_CNT 기록), `realdata.py` 규칙 그대로 (2차 Parquet → 1차 CSV 형식 추출), 블록 bay 수는 24개월 최대, meta 에 BTB 이동 · BTB 후 적하 수. 휴리스틱 첫 확인: 롤링 v2 의 무지원 대비 L1 18 % · L3 3 % · R 1~3 %, 무지원 일정이 실제 기록보다 18~35 % 낮음(모델 밖 AH · BTB 등) (모델 변경 없음)
 
 ## 휴리스틱: Window–Slack 지원 규칙 (웹 `window_rule`, 2026-10-13)
@@ -146,7 +149,7 @@ Jupyter 에서 노트북을 다시 저장하는 경우가 있으므로, 고치�
 
 ### 적하 rehandle 사전 정보 (LD_LOOKAHEAD, 2026-10-28)
 연구 고민 노트: "적하쪽 리핸들은 AGV 가 도착하는 시점을 안다고 가정하고 반출 리핸들은 ET(외부트럭)이 도착하는 시점을 모른다는 가정" — 선행연구 Park et al.(2010, OR Spectrum 32, 류광열 교수님 연구실) 참고.
-- 적하(LD): AGV·내부트럭 도착을 H 전부터 앎 → $a_r=\max(0,a_{\pi(r)}-H)$ (노트북 `LD_LOOKAHEAD`, 웹 "적하 rehandle 은 AGV 도착 H분 전부터", 기본 끔 · H 30분)
+- 적하(LD): AGV·내부트럭 도착을 H 전부터 앎 → $a_r=\max(0,a_{\pi(r)}-H)$ (노트북 `LD_LOOKAHEAD`, 웹 "적하 rehandle 은 AGV 도착 H분 전부터", **기본 켬 · H 60분** (2026-11-06 부터, 예전 끔 · 30분))
 - 반출(GO): 외부트럭 도착을 모름 → 도착 뒤에만 (`RH_AFTER_ARRIVAL`, 1단계). MIP 는 미래 도착을 아는 상태로 계획하므로 상한. 2단계 = 아래 롤링 호라이즌
 - 비교군은 rehandle 이 본 작업 안이라 미리 할 수 없음 (현재 운영 방식). 협업 MIP · 창 규칙 v1/v2 에 같은 옵션, 조건이 다르면 "MIP 대비" 계산 안 함
 - 동원 데이터는 LD rehandle 3.5 % 로 드물어 실험용 생성기 프리셋 "적하 rehandle 실험값" 추가 (LD 6 · DS 4, LD RH 확률 0.5, SC 간격 400 s)
@@ -254,13 +257,14 @@ Jupyter 에서 노트북을 다시 저장하는 경우가 있으므로, 고치�
 - **롤링 실험**: 연구실 서버에서 MIP 네 가지(롤링 · 정적 × 비교군 · 협업)를 같은 조건으로 일괄 (`run_rolling.py --mip-only`), 실데이터 구간에서 롤링 비교군의 실제 기록 재현 확인 (`--instance-files`), 롤링8(5h 둘 다 과부하 #2)은 서버 재실행(재계획 60 s)에서 끝남 — 30 s 때의 "확정되지 않은 작업" 오류 원인은 미확인, 창 규칙에 지원 시점 창 추가 (H 가 클 때 너무 일찍 돕는 문제), AGV 정보 두 단계(작업 목록 1~2시간 전 · 정확한 도착 10~20분 전) · 외부트럭 게이트 정보 민감도, 실행 시간 흔들림
 - **창 규칙 처리 순서**: 지금은 무지원 스케줄에서 먼저 시작하는 GO 부터 지원을 정함. 빈틈을 rehandle 많은 GO 나 효과 큰 GO 에 먼저 주거나, 넣은 뒤 다른 GO 와 바꿔 보는 개선 필요 (1013 - 02 의 GO_5 ↔ GO_7)
 - **비교군과 협업(지원 없음)의 차이**: rehandle 을 본 작업에 합친 비교군과 분리한 협업 모델은 ETD 계산이 달라, `RH_AFTER_ARRIVAL=True` · 지원 없음이어도 값이 조금 다를 수 있음 (예: 웹 생성 인스턴스 2965.5 vs 2991.0)
-- **제한적 순서 교환** → 보완 ver 로 구현 (2026-11-06, `model/model_formulation_swap.md`). 남은 것: real2026 에서 교환만 · 협업 · 협업+교환 비교, 현장 허용 여부, 롤링 동점 해 근시안(rehandle 일찍 하도록 작은 가중치)
+- **제한적 순서 교환** → 보완 ver 로 구현 (2026-11-06, `model/model_formulation_swap.md`, 기본 고정 없음). 남은 것: real2026 에서 교환만 · 협업 · 협업+교환 비교 (고정 없음 vs 적하 고정), 현장 허용 여부, 롤링 동점 해 근시안(rehandle 일찍 하도록 작은 가중치)
 - **휴리스틱 (수학적 접근)**: `model/heuristic_design.md` — 지연 전파 공식 · 지원 이득/비용 · 지배 규칙 · 완벽 지원 하한(지원 잠재력) → MIP 해로 규칙 검증부터
 - (이전 메모) 지원받는 동안 원래 크레인이 다음 작업(트럭 도착)을 먼저 하도록 한 칸 교환 허용할지 (연구 고민 노트)
   - 해측도 같은 구조 (2026-11-03): 적하 j → 양하 k 순서에서 LC 가 j 의 적하 rehandle 을 끝내기 전에는 (5) 고정 순서 · (11) rehandle → 본 작업 때문에 SC 는 j 도 k 도 못 하고, 양하 AGV 는 TP 에서 기다림.
     롤링 협업에서는 드묾: LC 가 rehandle 을 도운 적하 작업 중 SC 가 기다린 것 5시간 55개 중 11개(합 25분) · 10시간 45개 중 7개(합 10분), 다음이 양하인 경우 3 · 1개 (AGV 60분 전 정보로 대부분 SC 가 오기 전에 끝냄).
     다음 작업이 rehandle 없는 적하여도 같음 (SC 가 기다린 경우의 다음 작업: 양하 3 · 1, 적하·rehandle 없음 3 · 4, 적하·rehandle 있음 4 · 2).
     다만 적하끼리는 선박 적재 순서라 현실에서도 대개 교환 불가(현실의 제약) → 모형의 한계는 흐름이 다른 쌍뿐: 적하 ↔ 양하, 반출 ↔ 반입(외부트럭끼리). 현장 허용 여부 확인 먼저
+    (2026-11-06 (2): 경우에 따라 적하끼리 바꾸는 편이 나을 수 있어 보완 ver 기본은 고정 없음, 적하 고정은 옵션)
   - 적하 지원이 이득인 조건: 반출(외부트럭 도착 뒤 rehandle)은 트럭 도착 때 원래 크레인이 앞 작업 중(대기열)이어야 하지만, 적하는 AGV 60분 전부터라 SC 가 다른 작업을 하는 동안이면 됨
     (롤링 협업, LC 가 한 적하 rehandle 중 SC 가 다른 작업 중에 한 것 5시간 99개 중 79개 · 10시간 60개 중 53개, 바로 앞 작업과 겹친 것은 29 · 13개, 앞 작업 적하 49 · 양하 49). 발표자료 16(수리모형) · 17 · 18장
 - **대기열 인스턴스**: 웹 생성기에 "대기열 있는 보정값"(SC 584 / LC 200 s, GO 대기 중앙값 13.5분) 추가. 실제 19분과 맞추는 보정은 남음

@@ -423,7 +423,7 @@ class RealData:
                         out = (r[5] - t0) if r[5] else st + REAL_PARAMS["pick"]
                     else:
                         out = comp
-                    actual.append({"type": typ, "end": comp, "wait": out - a})
+                    actual.append({"type": typ, "end": comp, "wait": out - a, "crane": side})
             for k, r in enumerate(rs):
                 if t0 <= r[2] < t1 and r[0] not in MAIN and k not in consumed:
                     report["other_moves"][f"{side}-{r[0]}"] += 1
@@ -452,6 +452,10 @@ class RealData:
                 "makespan": round(max(x["end"] for x in actual), 1) if actual else None,
                 "truck_wait_sum": agg(MAIN), "truck_wait_internal": agg(("DS", "LD")),
                 "truck_wait_external": agg(("GI", "GO")), "go_wait_sum": agg(("GO",)),
+                "truck_wait_by_type": {t: agg((t,)) for t in MAIN if agg((t,)) is not None},
+                "makespan_by_crane": {c: round(max(x["end"] for x in actual if x["crane"] == c), 1)
+                                      for c in ("SC", "LC") if any(x["crane"] == c for x in actual)},
+                "n_jobs": len(actual),
                 "note": "같은 구간의 실제 기록. 제외된 작업(AH·RH·MI·MO 등)과 구간 밖 작업도 실제로는 크레인 시간을 썼으므로 참고용.",
             },
             "report": {k: (dict(v) if isinstance(v, Counter) else v) for k, v in report.items()},
